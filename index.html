@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>株式バックテスト</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.0/dist/chartjs-chart-financial.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <!-- ヘッダー -->
+    <header class="header">
+      <div class="header-inner">
+        <span class="logo">📈 株バックテスター</span>
+        <span class="subtitle">日本個別株 短期戦略検証ツール</span>
+      </div>
+    </header>
+
+    <!-- 設定パネル -->
+    <section class="panel config-panel">
+      <h2 class="panel-title">設定</h2>
+      <div class="config-grid">
+        <div class="config-item">
+          <label>銘柄コード <span class="hint">東証: 証券コード.T</span></label>
+          <input type="text" id="ticker" value="7203.T" placeholder="例: 7203.T" />
+        </div>
+        <div class="config-item">
+          <label>取得期間</label>
+          <select id="period">
+            <option value="6mo">6ヶ月</option>
+            <option value="1y" selected>1年</option>
+            <option value="2y">2年</option>
+            <option value="3y">3年</option>
+          </select>
+        </div>
+        <div class="config-item">
+          <label>戦略</label>
+          <select id="strategy">
+            <optgroup label="トレンド・ブレイクアウト">
+              <option value="ma_cross">移動平均クロス</option>
+              <option value="macd">MACD</option>
+              <option value="psar">パラボリックSAR</option>
+              <option value="dmi">DMI（方向性指数）</option>
+              <option value="donchian">ドンチャンチャネル</option>
+              <option value="prev_high">前日高値ブレイクアウト</option>
+            </optgroup>
+            <optgroup label="オシレーター・逆張り">
+              <option value="rsi">RSI</option>
+              <option value="stoch">ストキャスティクス</option>
+              <option value="rci">RCI（順位相関指数）</option>
+              <option value="psycho">サイコロジカルライン</option>
+            </optgroup>
+            <optgroup label="ボラティリティ・平均回帰">
+              <option value="bb">ボリンジャーバンド</option>
+              <option value="ma_dev">移動平均乖離率</option>
+              <option value="std_break">標準偏差ブレイクアウト</option>
+            </optgroup>
+            <optgroup label="ローソク足パターン">
+              <option value="hammer">ハンマー / 逆ハンマー</option>
+              <option value="engulf">包み足（エンゴルフィング）</option>
+              <option value="three">赤三兵 / 黒三兵</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="config-item" id="ma-params">
+          <label>短期MA / 長期MA</label>
+          <div class="input-row">
+            <input type="number" id="short-ma" value="25" min="3" max="100" />
+            <span>/</span>
+            <input type="number" id="long-ma" value="75" min="10" max="300" />
+            <span>日</span>
+          </div>
+        </div>
+        <div class="config-item hidden" id="rsi-params">
+          <label>RSI期間 / 閾値（売買）</label>
+          <div class="input-row">
+            <input type="number" id="rsi-period" value="14" min="5" max="30" />
+            <span>日 /</span>
+            <input type="number" id="rsi-buy" value="30" min="10" max="50" />
+            <span>〜</span>
+            <input type="number" id="rsi-sell" value="70" min="50" max="90" />
+          </div>
+        </div>
+        <div class="config-item hidden" id="bb-params">
+          <label>BB期間 / σ</label>
+          <div class="input-row">
+            <input type="number" id="bb-period" value="20" min="10" max="50" />
+            <span>日 /</span>
+            <input type="number" id="bb-sigma" value="2" min="1" max="3" step="0.5" />
+            <span>σ</span>
+          </div>
+        </div>
+        <div class="config-item hidden" id="p-macd">
+          <label>短期EMA / 長期EMA / シグナル（日）</label>
+          <div class="input-row">
+            <input id="m-fast" type="number" value="12" min="3" max="30"/>
+            <span>/</span>
+            <input id="m-slow" type="number" value="26" min="10" max="60"/>
+            <span>/</span>
+            <input id="m-sig"  type="number" value="9"  min="3" max="20"/>
+          </div>
+        </div>
+
+        <!-- ドンチャン -->
+        <div class="config-item hidden" id="p-donchian">
+          <label>チャネル期間（日）</label>
+          <div class="input-row">
+            <input id="dc-n" type="number" value="20" min="5" max="60"/>
+            <span>日でブレイクアウト</span>
+          </div>
+        </div>
+
+        <!-- ストキャスティクス -->
+        <div class="config-item hidden" id="p-stoch">
+          <label>期間 / 買閾値 / 売閾値</label>
+          <div class="input-row">
+            <input id="st-n"   type="number" value="14" min="5" max="30"/>
+            <span>/</span>
+            <input id="st-buy" type="number" value="20" min="10" max="40"/>
+            <span>/</span>
+            <input id="st-sel" type="number" value="80" min="60" max="90"/>
+          </div>
+        </div>
+
+        <!-- パラボリックSAR -->
+        <div class="config-item hidden" id="p-psar">
+          <label>加速係数 / 最大値</label>
+          <div class="input-row">
+            <input id="ps-af"  type="number" value="0.02" min="0.01" max="0.1" step="0.01"/>
+            <span>/</span>
+            <input id="ps-max" type="number" value="0.2"  min="0.1"  max="0.5" step="0.05"/>
+          </div>
+        </div>
+
+        <!-- 前日高値ブレイクアウト -->
+        <div class="config-item hidden" id="p-prev_high">
+          <label>確認方法 / 利確幅（%）</label>
+          <div class="input-row">
+            <select id="ph-confirm">
+              <option value="close">終値ブレイク</option>
+              <option value="intra">ザラ場ブレイク（高値）</option>
+            </select>
+            <span>/ 利確</span>
+            <input id="ph-tp" type="number" value="3" min="1" max="20" step="0.5"/>
+            <span>%</span>
+          </div>
+        </div>
+
+        <!-- RCI -->
+        <div class="config-item hidden" id="p-rci">
+          <label>RCI期間 / 買閾値 / 売閾値</label>
+          <div class="input-row">
+            <input id="rci-n"   type="number" value="9"   min="5" max="26"/>
+            <span>日 /</span>
+            <input id="rci-buy" type="number" value="-80" min="-95" max="-50"/>
+            <span>/</span>
+            <input id="rci-sel" type="number" value="80"  min="50"  max="95"/>
+          </div>
+        </div>
+
+        <!-- 移動平均乖離率 -->
+        <div class="config-item hidden" id="p-ma_dev">
+          <label>MA期間 / 買閾値(%) / 売閾値(%)</label>
+          <div class="input-row">
+            <input id="md-n"   type="number" value="25"  min="5"   max="100"/>
+            <span>日 /</span>
+            <input id="md-buy" type="number" value="-5"  min="-20" max="-1" step="0.5"/>
+            <span>/</span>
+            <input id="md-sel" type="number" value="5"   min="1"   max="20" step="0.5"/>
+            <span>%</span>
+          </div>
+        </div>
+
+        <!-- DMI -->
+        <div class="config-item hidden" id="p-dmi">
+          <label>期間 / ADX閾値</label>
+          <div class="input-row">
+            <input id="dmi-n"   type="number" value="14" min="5" max="30"/>
+            <span>日 / ADX ≥</span>
+            <input id="dmi-adx" type="number" value="25" min="10" max="50"/>
+          </div>
+        </div>
+
+        <!-- サイコロジカルライン -->
+        <div class="config-item hidden" id="p-psycho">
+          <label>期間 / 買閾値(%) / 売閾値(%)</label>
+          <div class="input-row">
+            <input id="ps-n"   type="number" value="12" min="5" max="26"/>
+            <span>日 /</span>
+            <input id="ps-buy" type="number" value="25" min="10" max="40"/>
+            <span>/</span>
+            <input id="ps-sel" type="number" value="75" min="60" max="90"/>
+            <span>%</span>
+          </div>
+        </div>
+
+        <!-- 標準偏差ブレイクアウト -->
+        <div class="config-item hidden" id="p-std_break">
+          <label>期間 / 収縮判定 / 閾値(%)</label>
+          <div class="input-row">
+            <input id="sb-n"     type="number" value="20" min="10" max="60"/>
+            <span>日 /</span>
+            <input id="sb-lookb" type="number" value="10" min="5"  max="30"/>
+            <span>日 /</span>
+            <input id="sb-th"    type="number" value="50" min="20" max="80"/>
+            <span>%ile</span>
+          </div>
+        </div>
+
+        <!-- ハンマー -->
+        <div class="config-item hidden" id="p-hammer">
+          <label>ヒゲ倍率 / 保有日数</label>
+          <div class="input-row">
+            <input id="hm-ratio" type="number" value="2"  min="1.5" max="5" step="0.5"/>
+            <span>倍ヒゲ /</span>
+            <input id="hm-hold"  type="number" value="5"  min="1"   max="20"/>
+            <span>日後決済</span>
+          </div>
+        </div>
+
+        <!-- 包み足 -->
+        <div class="config-item hidden" id="p-engulf">
+          <label>タイプ</label>
+          <div class="input-row">
+            <select id="eg-type">
+              <option value="both">陽の包み足（買い）+ 陰の包み足（売り）</option>
+              <option value="bull">陽の包み足のみ（買いシグナル）</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 赤三兵・黒三兵 -->
+        <div class="config-item hidden" id="p-three">
+          <label>タイプ / 最小実体(ATR比)</label>
+          <div class="input-row">
+            <select id="th-type">
+              <option value="both">赤三兵（買い）+ 黒三兵（売り）</option>
+              <option value="bull">赤三兵のみ</option>
+            </select>
+            <span>/ 実体 ≥</span>
+            <input id="th-body" type="number" value="0.3" min="0.1" max="1" step="0.1"/>
+            <span>ATR</span>
+          </div>
+        </div>
+
+        <div class="strategy-hint hidden" id="strategyHint"></div>
+        <div class="config-item">
+          <label>初期資金 / 手数料</label>
+          <div class="input-row">
+            <input type="number" id="cap-v3" data-type="cap" value="1000000" />
+            <span>円 /</span>
+            <input type="number" id="fee" value="0.1" min="0" max="1" step="0.01" />
+            <span>%</span>
+          </div>
+        </div>
+        <div class="config-item">
+          <label>損切りライン</label>
+          <div class="input-row">
+            <input id="sl-pct" type="number" value="5" min="0" max="30" step="0.5"/>
+            <span>% 下落で売り（0=無効）</span>
+          </div>
+        </div>
+        <div class="config-item">
+          <label>利確ライン</label>
+          <div class="input-row">
+            <input id="tp-pct" type="number" value="0" min="0" max="50" step="0.5"/>
+            <span>% 上昇で売り（0=無効）</span>
+          </div>
+        </div>
+        <div class="config-item">
+          <div class="freq-label">取引回数モード</div>
+          <div class="freq-btns">
+            <button class="freq-btn active-normal" id="btn-normal" onclick="setFreqMode('normal')">通常</button>
+            <button class="freq-btn" id="btn-more" onclick="setFreqMode('more')">取引回数増</button>
+          </div>
+        </div>
+        <div class="config-item config-action">
+          <button id="run-btn" class="run-btn">▶ バックテスト実行</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ローディング -->
+    <div id="loading" class="loading hidden">
+      <div class="spinner"></div>
+      <span>データ取得中...</span>
+    </div>
+
+    <!-- エラー表示 -->
+    <div id="error-box" class="error-box hidden"></div>
+
+    <!-- 結果エリア（初期は非表示） -->
+    <div id="result-area" class="hidden">
+
+      <!-- パフォーマンス指標 -->
+      <section class="panel metrics-panel">
+        <h2 class="panel-title">パフォーマンス指標</h2>
+        <div class="metrics-grid">
+          <div class="metric-card" id="m-total-pnl">
+            <div class="metric-label">総損益</div>
+            <div class="metric-value">-</div>
+          </div>
+          <div class="metric-card" id="m-return">
+            <div class="metric-label">リターン</div>
+            <div class="metric-value">-</div>
+          </div>
+          <div class="metric-card" id="m-win-rate">
+            <div class="metric-label">勝率</div>
+            <div class="metric-value">-</div>
+          </div>
+          <div class="metric-card" id="m-max-dd">
+            <div class="metric-label">最大DD</div>
+            <div class="metric-value">-</div>
+          </div>
+          <div class="metric-card" id="m-trades">
+            <div class="metric-label">取引回数</div>
+            <div class="metric-value">-</div>
+          </div>
+          <div class="metric-card" id="m-avg-hold">
+            <div class="metric-label">平均保有日数</div>
+            <div class="metric-value">-</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 株価チャート -->
+      <section class="panel chart-panel">
+        <h2 class="panel-title">株価チャート + 売買シグナル</h2>
+        <div class="chart-container">
+          <canvas id="cPrice"></canvas>
+        </div>
+      </section>
+
+      <!-- 損益グラフ -->
+      <section class="panel chart-panel">
+        <h2 class="panel-title">累積損益グラフ</h2>
+        <div class="chart-container">
+          <canvas id="pnl-chart"></canvas>
+        </div>
+      </section>
+
+      <!-- トレード履歴 -->
+      <section class="panel table-panel">
+        <h2 class="panel-title">トレード履歴</h2>
+        <div class="table-wrapper">
+          <table id="trade-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>買い日</th>
+                <th>買値</th>
+                <th>売り日</th>
+                <th>売値</th>
+                <th>保有日数</th>
+                <th>損益（円）</th>
+                <th>損益（%）</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+    </div><!-- /result-area -->
+  </div><!-- /app -->
+
+  <script src="app.js?v=2"></script>
+</body>
+</html>

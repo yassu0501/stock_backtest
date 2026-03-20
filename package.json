@@ -1,0 +1,10 @@
+{
+  "name": "stock-backtest",
+  "version": "1.0.0",
+  "description": "日本個別株バックテストツール",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {}
+}
