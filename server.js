@@ -23,44 +23,99 @@ function fetchYahooCSV(ticker, period1, period2) {
     const encodedTicker = encodeURIComponent(ticker);
     const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodedTicker}?interval=1d&period1=${period1}&period2=${period2}&events=history`;
 
+    console.log('[DEBUG] リクエスト開始:', targetUrl);
+
     const options = {
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; BacktestBot/1.0)",
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
+        'Cache-Control': 'no-cache',
       },
     };
 
-    https
-      .get(targetUrl, options, (res) => {
-        let data = "";
-        res.on("data", (chunk) => (data += chunk));
-        res.on("end", () => {
-          try {
-            const json = JSON.parse(data);
-            const result = json.chart.result[0];
-            const timestamps = result.timestamp;
-            const ohlcv = result.indicators.quote[0];
-            const closes = ohlcv.close;
-            const opens = ohlcv.open;
-            const highs = ohlcv.high;
-            const lows = ohlcv.low;
-            const volumes = ohlcv.volume;
+    const req = https.get(targetUrl, options, (res) => {
+      console.log('[DEBUG] ステータスコード:', res.statusCode);
+      console.log('[DEBUG] レスポンスヘッダー:', JSON.stringify(res.headers));
 
-            const rows = timestamps.map((ts, i) => ({
-              date: new Date(ts * 1000).toISOString().split("T")[0],
-              open: opens[i] ? Math.round(opens[i] * 10) / 10 : null,
-              high: highs[i] ? Math.round(highs[i] * 10) / 10 : null,
-              low: lows[i] ? Math.round(lows[i] * 10) / 10 : null,
-              close: closes[i] ? Math.round(closes[i] * 10) / 10 : null,
-              volume: volumes[i] || 0,
-            })).filter((r) => r.close !== null);
+      let data = '';
+      res.on('data', (chunk) => (data += chunk));
+      res.on('end', () => {
+        console.log('[DEBUG] レスポンスボディ（先頭300文字）:', data.slice(0, 300));
 
-            resolve(rows);
-          } catch (e) {
-            reject(new Error("Yahoo Finance APIのパースに失敗: " + e.message));
+        // リダイレクトの処理（301/302）
+        if (res.statusCode === 301 || res.statusCode === 302) {
+          const location = res.headers['location'];
+          console.log('[DEBUG] リダイレクト先:', location);
+          reject(new Error(`リダイレクト発生: ${location}`));
+          return;
+        }
+
+        // 429: レート制限
+        if (res.statusCode === 429) {
+          console.log('[DEBUG] レート制限（429）');
+          reject(new Error('Yahoo Finance レート制限（しばらく待ってから再試行してください）'));
+          return;
+        }
+
+        // 403: アクセス拒否
+        if (res.statusCode === 403) {
+          console.log('[DEBUG] アクセス拒否（403）');
+          reject(new Error('Yahoo Finance アクセス拒否（IPブロックの可能性あり）'));
+          return;
+        }
+
+        // 200以外のエラー
+        if (res.statusCode !== 200) {
+          reject(new Error(`HTTPエラー: ${res.statusCode} / body: ${data.slice(0, 100)}`));
+          return;
+        }
+
+        try {
+          const json = JSON.parse(data);
+
+          if (json.chart.error) {
+            console.log('[DEBUG] Yahoo Finance APIエラー:', json.chart.error);
+            reject(new Error('Yahoo Finance: ' + json.chart.error.description));
+            return;
           }
-        });
-      })
-      .on("error", reject);
+
+          const result = json.chart.result[0];
+          const timestamps = result.timestamp;
+          const ohlcv = result.indicators.quote[0];
+
+          const rows = timestamps.map((ts, i) => ({
+            date:   new Date(ts * 1000).toISOString().split('T')[0],
+            open:   ohlcv.open[i]   ? Math.round(ohlcv.open[i]   * 10) / 10 : null,
+            high:   ohlcv.high[i]   ? Math.round(ohlcv.high[i]   * 10) / 10 : null,
+            low:    ohlcv.low[i]    ? Math.round(ohlcv.low[i]    * 10) / 10 : null,
+            close:  ohlcv.close[i]  ? Math.round(ohlcv.close[i]  * 10) / 10 : null,
+            volume: ohlcv.volume[i] || 0,
+          })).filter((r) => r.close !== null);
+
+          console.log('[DEBUG] データ取得成功:', rows.length, '件');
+          resolve(rows);
+
+        } catch (e) {
+          console.log('[DEBUG] JSONパースエラー:', e.message);
+          console.log('[DEBUG] 生レスポンス:', data.slice(0, 500));
+          reject(new Error('Yahoo Finance APIのパースに失敗: ' + e.message));
+        }
+      });
+    });
+
+    req.on('error', (e) => {
+      console.log('[DEBUG] ネットワークエラー:', e.message);
+      console.log('[DEBUG] エラー詳細:', e.code, e.syscall);
+      reject(new Error('ネットワークエラー: ' + e.message));
+    });
+
+    // タイムアウト設定（10秒）
+    req.setTimeout(10000, () => {
+      console.log('[DEBUG] タイムアウト（10秒）');
+      req.destroy();
+      reject(new Error('タイムアウト: Yahoo Financeへの接続が10秒を超えました'));
+    });
   });
 }
 
