@@ -17,11 +17,53 @@ const MIME = {
   ".js": "application/javascript",
 };
 
-// Yahoo Finance から日足データを取得（CSV形式）
+// 銘柄コードの正規化（自動補完のみ・エラーなし）
+function normalizeTicker(ticker) {
+  let t = (ticker || '').trim().toUpperCase();
+
+  // 4文字かつ先頭が数字 → .T を自動付与（例: 7203 → 7203.T, 285A → 285A.T）
+  if (/^\d[A-Z0-9]{3}$/.test(t)) {
+    t = t + '.T';
+  }
+
+  // .t（小文字）→ .T に統一（例: 7203.t → 7203.T）
+  t = t.replace(/\.t$/, '.T');
+
+  return t;
+}
+
+// Yahoo Finance から日足データを取得（株式分割対応・リトライ付き）
 function fetchYahooCSV(ticker, period1, period2) {
+  // 銘柄コードを正規化
+  const normalized = normalizeTicker(ticker);
+  return fetchWithRetry(normalized, period1, period2, 3);
+}
+
+// リトライ付きフェッチ（最大retries回）
+function fetchWithRetry(ticker, period1, period2, retries) {
+  return fetchOnce(ticker, period1, period2).catch((err) => {
+    // リトライ可能なエラーかどうか判定
+    const isRetryable =
+      err.message.includes('429') ||
+      err.message.includes('503') ||
+      err.message.includes('タイムアウト') ||
+      err.message.includes('ネットワークエラー');
+
+    if (retries > 0 && isRetryable) {
+      const wait = (4 - retries) * 1500; // 1.5秒 → 3秒 → 4.5秒と間隔を広げる
+      console.log(`リトライ待機 ${wait}ms... (残り${retries}回)`);
+      return new Promise((resolve) => setTimeout(resolve, wait))
+        .then(() => fetchWithRetry(ticker, period1, period2, retries - 1));
+    }
+    throw err;
+  });
+}
+
+// 実際のHTTPリクエスト（単回実行）
+function fetchOnce(ticker, period1, period2) {
   return new Promise((resolve, reject) => {
     const encodedTicker = encodeURIComponent(ticker);
-    const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodedTicker}?interval=1d&period1=${period1}&period2=${period2}&events=history`;
+    const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodedTicker}?interval=1d&period1=${period1}&period2=${period2}&events=history&includeAdjustedClose=true`;
 
     const options = {
       headers: {
@@ -33,19 +75,18 @@ function fetchYahooCSV(ticker, period1, period2) {
     };
 
     const req = https.get(targetUrl, options, (res) => {
-      // 403: アクセス拒否
       if (res.statusCode === 403) {
-        reject(new Error('Yahoo Finance アクセス拒否（しばらく待ってから再試行してください）'));
+        reject(new Error('403: Yahoo Financeにアクセスできませんでした'));
         return;
       }
-
-      // 429: レート制限
       if (res.statusCode === 429) {
-        reject(new Error('Yahoo Finance レート制限（しばらく待ってから再試行してください）'));
+        reject(new Error('429: リクエスト制限中です'));
         return;
       }
-
-      // 200以外のエラー
+      if (res.statusCode === 503) {
+        reject(new Error('503: Yahoo Financeが一時的に利用不可です'));
+        return;
+      }
       if (res.statusCode !== 200) {
         reject(new Error(`HTTPエラー: ${res.statusCode}`));
         return;
@@ -58,27 +99,50 @@ function fetchYahooCSV(ticker, period1, period2) {
           const json = JSON.parse(data);
 
           if (json.chart.error) {
-            reject(new Error('Yahoo Finance: ' + json.chart.error.description));
+            const msg = json.chart.error.description || '不明なエラー';
+            reject(new Error(`Yahoo Finance エラー: ${msg}`));
             return;
           }
 
-          const result    = json.chart.result[0];
-          const timestamps = result.timestamp;
-          const ohlcv     = result.indicators.quote[0];
+          if (!json.chart.result || json.chart.result.length === 0) {
+            reject(new Error('データが見つかりませんでした。銘柄コードを確認してください。'));
+            return;
+          }
 
-          const rows = timestamps.map((ts, i) => ({
-            date:   new Date(ts * 1000).toISOString().split('T')[0],
-            open:   ohlcv.open[i]   ? Math.round(ohlcv.open[i]   * 10) / 10 : null,
-            high:   ohlcv.high[i]   ? Math.round(ohlcv.high[i]   * 10) / 10 : null,
-            low:    ohlcv.low[i]    ? Math.round(ohlcv.low[i]    * 10) / 10 : null,
-            close:  ohlcv.close[i]  ? Math.round(ohlcv.close[i]  * 10) / 10 : null,
-            volume: ohlcv.volume[i] || 0,
-          })).filter((r) => r.close !== null);
+          const result     = json.chart.result[0];
+          const timestamps = result.timestamp;
+          const ohlcv      = result.indicators.quote[0];
+          const adjclose   = result.indicators.adjclose?.[0]?.adjclose;
+
+          const rows = timestamps.map((ts, i) => {
+            const rawClose = ohlcv.close[i];
+            const adjClose = adjclose?.[i];
+
+            // 調整比率の適用
+            const ratio = (rawClose && adjClose && rawClose !== 0)
+              ? adjClose / rawClose
+              : 1;
+
+            return {
+              date:   new Date(ts * 1000).toISOString().split('T')[0],
+              open:   ohlcv.open[i]  ? Math.round(ohlcv.open[i]  * ratio * 10) / 10 : null,
+              high:   ohlcv.high[i]  ? Math.round(ohlcv.high[i]  * ratio * 10) / 10 : null,
+              low:    ohlcv.low[i]   ? Math.round(ohlcv.low[i]   * ratio * 10) / 10 : null,
+              close:  adjClose       ? Math.round(adjClose               * 10) / 10
+                    : rawClose       ? Math.round(rawClose               * 10) / 10 : null,
+              volume: ohlcv.volume[i] || 0,
+            };
+          }).filter((r) => r.close !== null);
+
+          if (rows.length === 0) {
+            reject(new Error('取得できたデータが0件です。期間を変更してください。'));
+            return;
+          }
 
           resolve(rows);
 
         } catch (e) {
-          reject(new Error('Yahoo Finance APIのパースに失敗: ' + e.message));
+          reject(new Error('レスポンスの解析に失敗しました: ' + e.message));
         }
       });
     });
@@ -87,10 +151,9 @@ function fetchYahooCSV(ticker, period1, period2) {
       reject(new Error('ネットワークエラー: ' + e.message));
     });
 
-    // タイムアウト設定（10秒）
     req.setTimeout(10000, () => {
       req.destroy();
-      reject(new Error('タイムアウト: Yahoo Financeへの接続が10秒を超えました'));
+      reject(new Error('タイムアウト: 接続が10秒を超えました'));
     });
   });
 }

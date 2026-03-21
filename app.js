@@ -75,7 +75,7 @@ const STRATEGY_META = {
       { label: '2週間〜1ヶ月', level: 'best', mark: '◎' },
       { label: '1〜3ヶ月',   level: 'best', mark: '◎' },
     ],
-    note: 'N日高値更新でエントリー。トレンド転換の捕捉に強い',
+    note: '数週間の高値更新でエントリー。トレンドの波を大きく捉える。',
   },
   stoch: {
     name: 'ストキャスティクス',
@@ -180,7 +180,37 @@ const STRATEGY_META = {
     ],
     note: '3日連続の陽線/陰線。出現率は低いが信頼度が高い',
   },
+  prev_high: {
+    name: '前日高値ブレイクアウト',
+    type: 'ブレイクアウト',
+    periods: [
+      { label: '目先〜1週間', level: 'best', mark: '◎' },
+      { label: '1〜2週間',   level: 'good', mark: '○' },
+      { label: '2週間〜1ヶ月', level: 'ok',   mark: '△' },
+    ],
+    note: '前日の高値を超える「勢い」を捉える短期決戦型。',
+  },
 };
+
+// ---- 全戦略リスト（ランキング実行用） ----
+const ALL_STRATEGIES = [
+  { id: 'ma_cross',  name: '移動平均クロス' },
+  { id: 'macd',      name: 'MACD' },
+  { id: 'psar',      name: 'パラボリックSAR' },
+  { id: 'dmi',       name: 'DMI' },
+  { id: 'donchian',  name: 'ドンチャンチャネル' },
+  { id: 'prev_high', name: '前日高値ブレイクアウト' },
+  { id: 'rsi',       name: 'RSI' },
+  { id: 'stoch',     name: 'ストキャスティクス' },
+  { id: 'rci',       name: 'RCI' },
+  { id: 'psycho',    name: 'サイコロジカルライン' },
+  { id: 'bb',        name: 'ボリンジャーバンド' },
+  { id: 'ma_dev',    name: '移動平均乖離率' },
+  { id: 'std_break', name: '標準偏差ブレイクアウト' },
+  { id: 'hammer',    name: 'ハンマー / 逆ハンマー' },
+  { id: 'engulf',    name: '包み足' },
+  { id: 'three',     name: '赤三兵 / 黒三兵' },
+];
 
 function updateStrategyHint() {
   const strat = $('strategy').value;
@@ -293,6 +323,41 @@ runBtn.addEventListener("click", async () => {
   }
 });
 
+// ---- ランキング実行ボタン ----
+const runRankingBtn = $('run-ranking-btn');
+runRankingBtn.addEventListener('click', async () => {
+  const ticker = tickerEl.value.trim();
+  const period = periodEl.value;
+  if (!ticker) { showError("銘柄コードを入力してください"); return; }
+
+  setLoading(true);
+  hideError();
+  resultAreaEl.classList.add("hidden");
+  $('rankingResultsPanel').classList.add("hidden");
+
+  try {
+    const res = await fetch(`${API_BASE}/api/stock?ticker=${encodeURIComponent(ticker)}&period=${period}`);
+    if (!res.ok) {
+      if (res.status === 404) throw new Error("銘柄が見つかりません");
+      throw new Error(`サーバーエラー: ${res.status}`);
+    }
+    const { data } = await res.json();
+    if (!data || data.length < 50) throw new Error("データが不足しています（最低50日必要）");
+
+    await rankingInstance.runFullRanking(ticker, data);
+    
+    // ランキング完了後、アコーディオンが閉じていたら開く
+    const panel = $('rankingResultsPanel');
+    if (panel && panel.classList.contains('collapsed')) {
+      toggleRankingAccordion();
+    }
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    setLoading(false);
+  }
+});
+
 // ========================================
 // バックテストエンジン（共通シミュレーター）
 // ========================================
@@ -314,8 +379,14 @@ function simulate(data, sigs) {
     // ポジション保有中: 損切り・利確を終値ベースで判定
     if (pos) {
       const chg = (p - pos.price) / pos.price * 100;
-      if (slPct > 0 && chg <= -slPct) sig = 'sell';
-      if (tpPct > 0 && chg >= tpPct)  sig = 'sell';
+      if (slPct > 0 && chg <= -slPct) {
+        sig = 'sell';
+        sigs[i] = 'sell'; // チャート表示用に書き込む
+      }
+      if (tpPct > 0 && chg >= tpPct) {
+        sig = 'sell';
+        sigs[i] = 'sell'; // チャート表示用に書き込む
+      }
     }
 
     // 買いシグナル: 翌日始値でエントリー予約
@@ -401,32 +472,243 @@ function simulate(data, sigs) {
 }
 
 // 既存の runBacktest を更新
-function runBacktest(data) {
-  const strategy = strategyEl.value;
-  // indicators (lines) 取得のためだけにシグナル関数を呼ぶ
-  const { sigs, lines } = strategy === 'ma_cross' ? signalMA(data)
-                        : strategy === 'rsi'      ? signalRSI(data)
-                        : strategy === 'macd'     ? signalMACD(data)
-                        : strategy === 'donchian' ? signalDonchian(data)
-                        : strategy === 'stoch'    ? signalStoch(data)
-                        : strategy === 'psar'     ? signalPSAR(data)
-                        : strategy === 'prev_high' ? signalPrevHigh(data)
-                        : strategy === 'rci'       ? signalRCI(data)
-                        : strategy === 'ma_dev'    ? signalMADev(data)
-                        : strategy === 'dmi'       ? signalDMI(data)
-                        : strategy === 'psycho'    ? signalPsycho(data)
-                        : strategy === 'std_break' ? signalStdBreak(data)
-                        : strategy === 'hammer'    ? signalHammer(data)
-                        : strategy === 'engulf'    ? signalEngulf(data)
-                        : strategy === 'three'     ? signalThreeSoldiers(data)
-                        : signalBB(data);
+// ========================================
+// バックテスト実行（UI連携用）
+// ========================================
+function runBacktest(data, overrideStrategy = null) {
+  const strategy = overrideStrategy || strategyEl.value;
+  let res;
 
-  // シミュレーション実行
-  const result = simulate(data, sigs);
-  
-  // チャート描画に必要な情報を追加して返す
-  return { ...result, signals: sigs, indicators: lines };
+  switch (strategy) {
+    case 'ma_cross':  res = signalMA(data); break;
+    case 'rsi':       res = signalRSI(data); break;
+    case 'bb':        res = signalBB(data); break;
+    case 'macd':      res = signalMACD(data); break;
+    case 'donchian':  res = signalDonchian(data); break;
+    case 'stoch':     res = signalStoch(data); break;
+    case 'psar':      res = signalPSAR(data); break;
+    case 'prev_high': res = signalPrevHigh(data); break;
+    case 'rci':       res = signalRCI(data); break;
+    case 'ma_dev':    res = signalMADev(data); break;
+    case 'dmi':       res = signalDMI(data); break;
+    case 'psycho':    res = signalPsycho(data); break;
+    case 'std_break': res = signalStdBreak(data); break;
+    case 'hammer':    res = signalHammer(data); break;
+    case 'engulf':    res = signalEngulf(data); break;
+    case 'three':     res = signalThreeSoldiers(data); break;
+    default:          res = signalBB(data);
+  }
+
+  const result = simulate(data, res.sigs);
+  return { ...result, signals: res.sigs, indicators: res.lines };
 }
+
+/**
+ * 📊 全戦略自動ランキングクラス
+ */
+/**
+ * 📊 全戦略自動ランキングクラス (Phase 1.5)
+ */
+class AutomaticStrategyRanking {
+  constructor() {
+    this.results = {};
+    this.allResultsArray = [];
+    this.currentSort = { key: 'totalPnl', order: 'desc' };
+  }
+
+  async runFullRanking(code, priceData) {
+    console.log(`[自動ランキング開始] ${code} - ${ALL_STRATEGIES.length}戦略`);
+    this.results = {};
+
+    for (const strategy of ALL_STRATEGIES) {
+      try {
+        const result = runBacktest(priceData, strategy.id);
+        this.results[strategy.id] = {
+          strategyId: strategy.id,
+          strategyName: strategy.name,
+          totalPnl: result.totalPnl,
+          winRate: result.winRate,
+          maxDD: result.maxDD,
+          tradesCount: result.trades.length,
+          pf: this.calculatePF(result.trades)
+        };
+      } catch (err) {
+        console.warn(`⚠️ ${strategy.name} エラー:`, err.message);
+      }
+    }
+
+    this.allResultsArray = Object.values(this.results);
+    this.generateAndDisplayRanking();
+    this.initializeTabs();
+  }
+
+  calculatePF(trades) {
+    if (!trades || trades.length === 0) return 0;
+    const wins = trades.filter(t => t.pnl > 0).reduce((sum, t) => sum + t.pnl, 0);
+    const losses = Math.abs(trades.filter(t => t.pnl <= 0).reduce((sum, t) => sum + t.pnl, 0));
+    return losses > 0 ? wins / losses : (wins > 0 ? 99.9 : 0);
+  }
+
+  initializeTabs() {
+    const btns = document.querySelectorAll('.ranking-tab-btn');
+    const contents = document.querySelectorAll('.ranking-tab-content');
+
+    btns.forEach(btn => {
+      btn.onclick = () => {
+        const tabName = btn.getAttribute('data-tab');
+        btns.forEach(b => b.classList.toggle('active', b === btn));
+        contents.forEach(c => c.classList.toggle('active', c.id === `ranking${this.capitalize(tabName)}`));
+      };
+    });
+  }
+
+  capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+  generateAndDisplayRanking() {
+    const sorted = [...this.allResultsArray].sort((a, b) => b.totalPnl - a.totalPnl);
+    const top5 = sorted.slice(0, 5);
+    const worst5 = sorted.length > 5 ? sorted.slice(-5).reverse() : [...sorted].reverse();
+    
+    const stats = {
+      total: sorted.length,
+      best: sorted[0]?.totalPnl || 0,
+      worst: sorted[sorted.length - 1]?.totalPnl || 0,
+      avg: sorted.reduce((s, r) => s + r.totalPnl, 0) / sorted.length,
+      profitable: sorted.filter(r => r.totalPnl > 0).length
+    };
+
+    // Stage 1: Summary Stats
+    $('rankingSummary').innerHTML = this.generateSummary(stats);
+
+    // Stage 2: Leaderboard (Top 5 / Worst 5)
+    $('rankingTop5').innerHTML = this.generateLeaderboard(top5, "🏆 利益 Top 5");
+    $('rankingWorst5').innerHTML = this.generateLeaderboard(worst5, "📉 損失 Worst 5");
+
+    // Stage 3: All Strategies Table
+    $('rankingAll').innerHTML = this.generateAllTable();
+
+    $('rankingResultsPanel').classList.remove('hidden');
+  }
+
+  generateSummary(stats) {
+    const profitRatio = ((stats.profitable / stats.total) * 100).toFixed(1);
+    return `
+      <div class="ranking-summary">
+        <h3>📊 ランキング統計</h3>
+        <div class="summary-grid">
+          <div class="summary-item"><span class="label">評価戦略数</span><span class="value">${stats.total}</span></div>
+          <div class="summary-item"><span class="label">最高利益</span><span class="value positive">+${Math.round(stats.best).toLocaleString()}円</span></div>
+          <div class="summary-item"><span class="label">最大損失</span><span class="value negative">${Math.round(stats.worst).toLocaleString()}円</span></div>
+          <div class="summary-item"><span class="label">平均損益</span><span class="value ${stats.avg >= 0 ? 'positive' : 'negative'}">${stats.avg >= 0 ? '+' : ''}${Math.round(stats.avg).toLocaleString()}円</span></div>
+          <div class="summary-item"><span class="label">利益戦略率</span><span class="value positive">${stats.profitable} (${profitRatio}%)</span></div>
+        </div>
+      </div>
+    `;
+  }
+
+  generateLeaderboard(data, title) {
+    const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
+    const items = data.map((r, i) => `
+      <div class="ranking-item" onclick="applyRankingStrategy('${r.strategyId}')">
+        <div class="rank-cell">${medals[i] || '・'}</div>
+        <div class="ranking-detail">
+          <div class="strategy-name">${r.strategyName}</div>
+          <div class="ranking-metrics">
+            <span>勝率: ${r.winRate.toFixed(1)}%</span>
+            <span>取引: ${r.tradesCount}回</span>
+            <span>PF: ${r.pf.toFixed(2)}</span>
+          </div>
+        </div>
+        <div class="ranking-value-container">
+          <div class="pnl ${r.totalPnl >= 0 ? 'positive' : 'negative'}">${r.totalPnl >= 0 ? '+' : ''}${Math.round(r.totalPnl).toLocaleString()}円</div>
+          <div class="max-dd-badge">Max DD: ${r.maxDD.toFixed(1)}%</div>
+        </div>
+      </div>
+    `).join('');
+
+    return `
+      <div class="ranking-section">
+        <h3>${title}</h3>
+        ${items}
+      </div>
+    `;
+  }
+
+  generateAllTable() {
+    const sorted = [...this.allResultsArray].sort((a, b) => {
+      const { key, order } = this.currentSort;
+      let valA = a[key];
+      let valB = b[key];
+      if (typeof valA === 'string') {
+        return order === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }
+      return order === 'asc' ? valA - valB : valB - valA;
+    });
+
+    const rows = sorted.map((r, i) => `
+      <tr onclick="applyRankingStrategy('${r.strategyId}')" class="ranking-row">
+        <td>${i+1}</td>
+        <td class="strategy-name">${r.strategyName}</td>
+        <td class="pnl ${r.totalPnl >= 0 ? 'positive' : 'negative'}">${r.totalPnl >= 0 ? '+' : ''}${Math.round(r.totalPnl).toLocaleString()}</td>
+        <td>${r.winRate.toFixed(1)}%</td>
+        <td>${r.pf.toFixed(2)}</td>
+        <td>${r.maxDD.toFixed(1)}%</td>
+        <td>${r.tradesCount}</td>
+      </tr>
+    `).join('');
+
+    return `
+      <div class="ranking-section">
+        <h3>📋 全戦略ランキング一覧</h3>
+        <div class="table-wrapper">
+          <table class="ranking-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th class="sortable" onclick="rankingInstance.sortTable('strategyName')">戦略名</th>
+                <th class="sortable" onclick="rankingInstance.sortTable('totalPnl')">損益</th>
+                <th class="sortable" onclick="rankingInstance.sortTable('winRate')">勝率</th>
+                <th class="sortable" onclick="rankingInstance.sortTable('pf')">PF</th>
+                <th class="sortable" onclick="rankingInstance.sortTable('maxDD')">MaxDD</th>
+                <th class="sortable" onclick="rankingInstance.sortTable('tradesCount')">件数</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  sortTable(key) {
+    if (this.currentSort.key === key) {
+      this.currentSort.order = this.currentSort.order === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.currentSort.key = key;
+      this.currentSort.order = 'desc';
+    }
+    $('rankingAll').innerHTML = this.generateAllTable();
+  }
+}
+
+const rankingInstance = new AutomaticStrategyRanking();
+
+window.applyRankingStrategy = (id) => {
+  strategyEl.value = id;
+  strategyEl.dispatchEvent(new Event('change'));
+  runBtn.click();
+};
+
+// ---- ランキング・アコーディオン開閉 ----
+window.toggleRankingAccordion = () => {
+  const panel = $('rankingResultsPanel');
+  const icon  = $('ranking-toggle-icon');
+  if (!panel || !icon) return;
+
+  const isCollapsed = panel.classList.toggle('collapsed');
+  icon.textContent = isCollapsed ? '開く ▼' : '閉じる ▲';
+};
+
 
 // ---- 最大ドローダウン ----
 function calcMaxDrawdown(equities) {
@@ -1412,6 +1694,7 @@ const FREQ_PRESETS = {
     'md-n': 25, 'md-buy': -5, 'md-sel': 5,
     'dmi-n': 14, 'dmi-adx': 25,
     'ps-n': 12, 'ps-buy': 25, 'ps-sel': 75,
+    'ph-confirm': 'intra',
   },
   more: {
     'short-ma': 10, 'long-ma': 30,
@@ -1421,7 +1704,7 @@ const FREQ_PRESETS = {
     'st-n': 14, 'st-buy': 30, 'st-sel': 70,
     'dc-n': 10,
     'ps-af': 0.04, 'ps-max': 0.3,
-    'ph-tp': 2,
+    'ph-confirm': 'intra', 'ph-tp': 2,
     'hm-ratio': 1.5, 'hm-hold': 3,
     'th-body': 0.1,
     'rci-n': 9, 'rci-buy': -60, 'rci-sel': 60,
