@@ -616,7 +616,7 @@ class AutomaticStrategyRanking {
           <div class="ranking-metrics">
             <span>勝率: ${r.winRate.toFixed(1)}%</span>
             <span>取引: ${r.tradesCount}回</span>
-            <span>PF: ${r.pf.toFixed(2)}</span>
+            <span>PF: ${r.pf >= 99.9 ? '∞' : r.pf.toFixed(2)}</span>
           </div>
         </div>
         <div class="ranking-value-container">
@@ -651,7 +651,7 @@ class AutomaticStrategyRanking {
         <td class="strategy-name">${r.strategyName}</td>
         <td class="pnl ${r.totalPnl >= 0 ? 'positive' : 'negative'}">${r.totalPnl >= 0 ? '+' : ''}${Math.round(r.totalPnl).toLocaleString()}</td>
         <td>${r.winRate.toFixed(1)}%</td>
-        <td>${r.pf.toFixed(2)}</td>
+        <td>${r.pf >= 99.9 ? '∞' : r.pf.toFixed(2)}</td>
         <td>${r.maxDD.toFixed(1)}%</td>
         <td>${r.tradesCount}</td>
       </tr>
@@ -669,7 +669,7 @@ class AutomaticStrategyRanking {
                 <th class="sortable" onclick="rankingInstance.sortTable('totalPnl')">損益</th>
                 <th class="sortable" onclick="rankingInstance.sortTable('winRate')">勝率</th>
                 <th class="sortable" onclick="rankingInstance.sortTable('pf')">PF</th>
-                <th class="sortable" onclick="rankingInstance.sortTable('maxDD')">MaxDD</th>
+                <th class="sortable" onclick="rankingInstance.sortTable('maxDD')">最大下落率(%)</th>
                 <th class="sortable" onclick="rankingInstance.sortTable('tradesCount')">件数</th>
               </tr>
             </thead>
