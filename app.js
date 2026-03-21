@@ -3,6 +3,16 @@
 const API_BASE = "";
 const $ = (id) => document.getElementById(id);
 
+// UI制御: 投資スタイルの切り替え
+window.toggleInvestmentFields = () => {
+  const mode = $('investment-mode').value;
+  const box  = $('fixed-inv-box');
+  if (box) {
+    if (mode === 'fixed') box.classList.remove('hidden');
+    else box.classList.add('hidden');
+  }
+};
+
 // ---- DOM参照 ----
 const tickerEl = document.getElementById("ticker");
 const periodEl = document.getElementById("period");
@@ -366,7 +376,9 @@ function simulate(data, sigs) {
   const cap   = capEl ? parseFloat(capEl.value) : 1_000_000;
   const fee   = (+$('fee').value || 0) / 100;
   const slPct = +($('sl-pct') || {value:0}).value;
-  const tpPct = +($('tp-pct') || {value:0}).value;
+  const tpPct   = +($('tp-pct') || {value:0}).value;
+  const invMode = ($('investment-mode') || {value: 'compound'}).value;
+  const fixedAmt = +($('fixed-inv-amt') || {value: 1000000}).value;
 
   let cash = cap, pos = null;
   const trades = [], equityCurve = [];
@@ -392,7 +404,9 @@ function simulate(data, sigs) {
     // 買いシグナル: 翌日始値でエントリー予約
     if (sig === 'buy' && !pos && nextBar) {
       const entryPrice = nextBar.open;
-      const shares     = Math.floor(cash * (1 - fee) / entryPrice);
+      const targetAmt  = invMode === 'compound' ? cash : fixedAmt;
+      const entryAmt   = Math.min(cash, targetAmt);
+      const shares     = Math.floor(entryAmt * (1 - fee) / entryPrice);
       if (shares > 0) {
         cash -= shares * entryPrice * (1 + fee);
         pos = {
@@ -709,6 +723,255 @@ window.toggleRankingAccordion = () => {
   icon.textContent = isCollapsed ? '開く ▼' : '閉じる ▲';
 };
 
+/**
+ * 📡 マルチ戦略・リアルタイム監視クラス (Phase 2.5)
+ */
+class MultiStrategyMonitor {
+  constructor() {
+    this.intervalId = null;
+    this.ticker = null;
+    this.strategies = [];
+    this.isActive = false;
+    this.timeline = [];
+    this.setupListeners();
+    this.initMonitorChecklist(); // ページロード時にチェックリストを初期化
+  }
+
+  setupListeners() {
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        if (this.isActive) this.pause();
+      } else {
+        if (this.isActive) this.resume();
+      }
+    });
+
+    const btnStart = $('btnStartMultiMonitor');
+    const btnReset = $('btnResetMultiMonitor');
+    if (btnStart) btnStart.onclick = () => this.toggle();
+    if (btnReset) btnReset.onclick = () => this.reset();
+  }
+
+  // initChecklist を initMonitorChecklist にリネームし、コンストラクタから呼び出す
+  initMonitorChecklist() {
+    const container = $('monitorStrategyChecklist');
+    if (!container) return;
+    
+    container.innerHTML = ALL_STRATEGIES.map(s => `
+      <label>
+        <input type="checkbox" name="m-strat" value="${s.id}" ${['ma_cross','rsi','bb','macd'].includes(s.id) ? 'checked' : ''}>
+        ${s.name}
+      </label>
+    `).join('');
+    console.log('[監視] 戦略チェックリストを動的に生成しました');
+  }
+
+  toggle() {
+    if (this.isActive) {
+      this.stop();
+    } else {
+      this.start();
+    }
+  }
+
+  start() {
+    const ticker = $('multiMonitorTicker').value.trim();
+    // チェックされた戦略を取得
+    const selected = Array.from(document.querySelectorAll('input[name="m-strat"]:checked')).map(el => el.value);
+
+    if (!ticker) { alert('監視する銘柄コードを入力してください'); return; }
+    if (selected.length === 0) { alert('少なくとも1つの戦略を選択してください'); return; }
+
+    this.ticker = ticker;
+    this.strategies = selected;
+    this.isActive = true;
+    
+    $('btnStartMultiMonitor').textContent = '監視停止';
+    $('btnStartMultiMonitor').classList.add('active');
+    $('multiMonitorStatusBadge').textContent = '🟢 監視中';
+    $('multiMonitorStatusBadge').classList.add('active');
+    $('multiMonitorDisplay').classList.remove('hidden');
+    $('displayTickerCode').textContent = ticker;
+
+    console.log(`[一括監視開始] 銘柄:${this.ticker}, 戦略数:${this.strategies.length}`);
+    this.resume();
+  }
+
+  stop() {
+    this.isActive = false;
+    this.pause();
+    $('btnStartMultiMonitor').textContent = '監視開始';
+    $('btnStartMultiMonitor').classList.remove('active');
+    $('multiMonitorStatusBadge').textContent = '⚫ 停止中';
+    $('multiMonitorStatusBadge').classList.remove('active');
+    console.log('[一括監視停止]');
+  }
+
+  reset() {
+    this.stop();
+    this.timeline = [];
+    $('multiMonitorTicker').value = '';
+    $('strategyCardsGrid').innerHTML = '';
+    $('signalTimeline').innerHTML = '';
+    $('consensusBuy').style.width = '0%';
+    $('consensusWait').style.width = '100%';
+    $('consensusSell').style.width = '0%';
+    $('consensusVerdict').textContent = 'WAITING...';
+    $('multiMonitorDisplay').classList.add('hidden');
+  }
+
+  resume() {
+    if (this.intervalId) return;
+    this.checkAll(); // 初回即座に実行
+    this.intervalId = setInterval(() => this.checkAll(), 15 * 60 * 1000); // 15分
+  }
+
+  pause() {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
+  }
+
+  async checkAll() {
+    if (!this.isActive || document.hidden) return;
+
+    try {
+      console.log(`[一括監視実行] ${this.ticker} 更新中...`);
+      
+      // データ取得
+      const histRes = await fetch(`/api/stock?ticker=${encodeURIComponent(this.ticker)}&period=1y`);
+      const { data: history, ticker } = await histRes.json();
+      const priceRes = await fetch(`/api/stock-price/${encodeURIComponent(this.ticker)}`);
+      const priceData = await priceRes.json();
+      
+      if (!priceData.success) throw new Error('現在値取得失敗');
+      const latestPrice = priceData.data.close;
+
+      // 銘柄名の表示更新（もし取得できれば）
+      $('displayTickerName').textContent = ticker || this.ticker;
+      
+      // データのマージ
+      const latestBar = {
+        date: new Date(priceData.data.timestamp).toISOString().split('T')[0],
+        open: latestPrice, high: priceData.data.high, low: priceData.data.low, close: latestPrice, volume: 0
+      };
+      const combined = [...history];
+      if (combined.length > 0 && combined[combined.length - 1].date === latestBar.date) {
+        combined[combined.length - 1] = latestBar;
+      } else {
+        combined.push(latestBar);
+      }
+
+      // 各戦略の判定
+      const results = {};
+      const counts = { buy: 0, sell: 0, wait: 0 };
+
+      this.strategies.forEach(stratId => {
+        try {
+          const res = runBacktest(combined, stratId);
+          const lastSig = res.signals[res.signals.length - 1];
+          const indicators = res.indicators;
+          
+          results[stratId] = { signal: lastSig || 'wait', indicators };
+          counts[lastSig || 'wait']++;
+        } catch (e) {
+          console.error(`判定エラー (${stratId}):`, e);
+        }
+      });
+
+      // UI更新
+      this.updateCards(results, latestPrice);
+      this.updateConsensus(counts);
+      this.updateTimeline(counts, latestPrice);
+      
+      $('multiLastCheckTime').textContent = `最終確認: ${new Date().toLocaleTimeString('ja-JP')}`;
+
+    } catch (err) {
+      console.error('[一括監視エラー]:', err);
+    }
+  }
+
+  updateCards(results, price) {
+    const grid = $('strategyCardsGrid');
+    grid.innerHTML = '';
+
+    for (const [id, res] of Object.entries(results)) {
+      const card = document.createElement('div');
+      card.className = `strategy-card`;
+      
+      // 指標テキストの生成
+      const indText = res.indicators.map(ind => {
+        const val = ind.data[ind.data.length - 1];
+        return `${ind.label}: ${typeof val === 'number' ? val.toFixed(1) : '--'}`;
+      }).join('<br>');
+
+      const strategyName = document.querySelector(`#strategy option[value="${id}"]`)?.textContent || id;
+
+      card.innerHTML = `
+        <div class="card-title">${strategyName}</div>
+        <div class="card-main">
+          <div class="card-signal ${res.signal}">${res.signal.toUpperCase()}</div>
+          <div class="card-value">${indText}</div>
+        </div>
+      `;
+      grid.appendChild(card);
+    }
+  }
+
+  updateConsensus(counts) {
+    const total = counts.buy + counts.sell + counts.wait;
+    const pBuy = (counts.buy / total) * 100;
+    const pWait = (counts.wait / total) * 100;
+    const pSell = (counts.sell / total) * 100;
+
+    $('consensusBuy').style.width = `${pBuy}%`;
+    $('consensusWait').style.width = `${pWait}%`;
+    $('consensusSell').style.width = `${pSell}%`;
+
+    let verdict = 'WAITING...';
+    if (pBuy >= 60) verdict = '🔥 STRONG BUY';
+    else if (pBuy > 30) verdict = '🟢 BUY LEAN';
+    else if (pSell >= 60) verdict = '💀 STRONG SELL';
+    else if (pSell > 30) verdict = '🔴 SELL LEAN';
+    else if (pWait > 70) verdict = '⚖️ NEUTRAL';
+
+    $('consensusVerdict').textContent = verdict;
+  }
+
+  updateTimeline(counts, price) {
+    if (counts.buy === 0 && counts.sell === 0) return;
+
+    const time = new Date().toLocaleTimeString('ja-JP');
+    const type = counts.buy > counts.sell ? 'buy' : 'sell';
+    const action = type === 'buy' ? 'BUY 信号多数' : 'SELL 信号多数';
+    
+    // タイムラインへの追加
+    const item = document.createElement('div');
+    item.className = `timeline-item ${type}`;
+    item.innerHTML = `
+      <div class="timeline-dot"></div>
+      <div class="timeline-content">
+        <div class="timeline-info">
+          <strong>${action}</strong> (B:${counts.buy} / S:${counts.sell})
+          <span class="price">@ ¥${price.toLocaleString()}</span>
+        </div>
+        <div class="timeline-time">${time}</div>
+      </div>
+    `;
+
+    const container = $('signalTimeline');
+    container.insertBefore(item, container.firstChild);
+    
+    // 最大10件
+    if (container.children.length > 10) {
+      container.removeChild(container.lastChild);
+    }
+  }
+}
+
+const multiMonitor = new MultiStrategyMonitor();
+
 
 // ---- 最大ドローダウン ----
 function calcMaxDrawdown(equities) {
@@ -789,7 +1052,7 @@ function signalRSI(data) {
     if (inPosition && rsiArr[i - 1] > sellTh && r <= sellTh) { inPosition = false; return "sell"; }
     return null;
   });
-  return { sigs, lines: [] };
+  return { sigs, lines: [{ label: "RSI", data: rsiArr, color: "#facc15" }] };
 }
 
 // ---- 戦略: ボリンジャーバンド ----
@@ -917,10 +1180,10 @@ function signalStoch(data) {
   const sigs = kArr.map((k, i) => {
     if (k == null || !i || kArr[i-1] == null) return null;
     if (!inPos && kArr[i-1] < buy && k >= buy) { inPos = true;  return 'buy'; }
-    if (inPos  && kArr[i-1] > sel && k <= sel) { inPos = false; return 'sell'; }
+    if (inPos  && kArr[i-1] > sel && k <= sel) { inPos = false; return "sell"; }
     return null;
   });
-  return { sigs, lines: [] };
+  return { sigs, lines: [{ label: "%K", data: kArr, color: "#facc15" }] };
 }
 
 // パラボリックSAR

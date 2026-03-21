@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>株式バックテスト</title>
+  <title>億り人爆誕装置</title>
   <link rel="stylesheet" href="style.css" />
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -13,23 +13,94 @@
 </head>
 <body>
   <div class="app">
-    <!-- ヘッダー -->
     <header class="header">
       <div class="header-inner">
-        <span class="logo">📈 株バックテスター</span>
-        <span class="subtitle">日本個別株 短期戦略検証ツール</span>
+        <div class="logo">億り人<span>爆誕装置</span></div>
+        <div class="subtitle">Backtest Engine Pro</div>
       </div>
     </header>
 
+    <div class="main-layout">
+      <!-- サイドバー: 監視設定 (Phase 2.5) -->
+      <aside class="sidebar">
+        <section class="panel sidebar-panel">
+          <div class="panel-header">
+            <span class="icon">📡</span>
+            <h2>監視設定</h2>
+          </div>
+          
+          <div class="sidebar-group">
+            <label>監視銘柄</label>
+            <input type="text" id="multiMonitorTicker" placeholder="例: 7203" class="sidebar-input">
+          </div>
+
+          <div class="sidebar-group">
+            <label>適用戦略（最大6つ）</label>
+            <div id="monitorStrategyChecklist" class="strategy-checklist scrollable-list">
+              <!-- JSで動的に生成 -->
+            </div>
+          </div>
+
+          <div class="sidebar-actions">
+            <button id="btnStartMultiMonitor" class="btn-primary full-width">🟢 監視開始</button>
+            <button id="btnResetMultiMonitor" class="btn-outline full-width">⊗ リセット</button>
+          </div>
+        </section>
+
+        <!-- ヘルプ・ステータス表示等（任意） -->
+        <div class="sidebar-footer">
+          <small>Monitoring Interval: 15min</small>
+        </div>
+      </aside>
+
+      <!-- メインエリア -->
+      <main class="content-area">
+        <!-- 📊 マルチ戦略監視ダッシュボード (Phase 2.5) -->
+        <section id="multiMonitorDisplay" class="panel multi-monitor-panel hidden">
+          <div class="monitor-header-row">
+            <div class="ticker-info">
+              <h2 id="displayTickerCode">----</h2>
+              <span id="displayTickerName" class="ticker-name">ロード中...</span>
+            </div>
+            <div class="monitor-meta">
+              <div id="multiMonitorStatusBadge" class="status-badge">⚫ 停止中</div>
+              <span id="multiLastCheckTime" class="last-check">最終確認 --:--</span>
+            </div>
+          </div>
+
+          <!-- 合意度インジケーター -->
+          <div class="consensus-box">
+            <div class="consensus-label">総合シグナル合意度 (Consensus)</div>
+            <div class="consensus-bar-container">
+              <div id="consensusBuy" class="bar buy" style="width: 0%"></div>
+              <div id="consensusWait" class="bar wait" style="width: 100%"></div>
+              <div id="consensusSell" class="bar sell" style="width: 0%"></div>
+            </div>
+            <div class="consensus-verdict" id="consensusVerdict">WAITING...</div>
+          </div>
+
+          <!-- 戦略別カードグリッド -->
+          <div id="strategyCardsGrid" class="strategy-cards-grid">
+            <!-- JSで生成 -->
+          </div>
+
+          <!-- シグナルタイムライン -->
+          <div class="timeline-section">
+            <div class="section-title">シグナル履歴 (Timeline)</div>
+            <div id="signalTimeline" class="signal-timeline">
+              <!-- JSで生成 -->
+            </div>
+          </div>
+        </section>
     <!-- 設定パネル -->
     <section class="panel config-panel">
       <h2 class="panel-title">設定</h2>
       <div class="config-grid">
-        <div class="config-item">
-          <label>銘柄コード <span class="hint">東証: 証券コード.T</span></label>
-          <input type="text" id="ticker" value="7203.T" placeholder="例: 7203.T" />
+        <div class="config-item tiny">
+          <label>銘柄コード <span class="hint">.T</span></label>
+          <input type="text" id="ticker" value="7203.T" placeholder="7203.T" />
         </div>
-        <div class="config-item">
+        <div class="config-item tiny">
           <label>取得期間</label>
           <select id="period">
             <option value="6mo">6ヶ月</option>
@@ -38,7 +109,7 @@
             <option value="3y">3年</option>
           </select>
         </div>
-        <div class="config-item">
+        <div class="config-item wide">
           <label>戦略</label>
           <select id="strategy">
             <optgroup label="トレンド・ブレイクアウト">
@@ -248,6 +319,17 @@
           </div>
         </div>
 
+        <div class="config-item tiny">
+          <label>投資スタイル</label>
+          <select id="investment-mode" onchange="toggleInvestmentFields()">
+            <option value="compound" selected>複利</option>
+            <option value="fixed">単利</option>
+          </select>
+        </div>
+        <div class="config-item small hidden" id="fixed-inv-box">
+          <label>1回の投資額</label>
+          <input type="number" id="fixed-inv-amt" value="1000000" step="10000" />
+        </div>
         <div class="strategy-hint hidden" id="strategyHint"></div>
         <div class="config-item">
           <label>初期資金 / 手数料</label>
@@ -393,7 +475,8 @@
         </div>
       </section>
 
-    </div><!-- /result-area -->
+      </main><!-- /content-area -->
+    </div><!-- /main-layout -->
   </div><!-- /app -->
 
   <script src="app.js?v=2"></script>

@@ -10,6 +10,9 @@ const fs = require("fs");
 
 const PORT = process.env.PORT || 3001;
 
+// 最新株価キャッシュ (Phase 2)
+const priceCache = new Map();
+
 // MIMEタイプ
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -201,8 +204,94 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // --- API: /api/stock-price/:code (Phase 2) ---
+  if (parsed.pathname.startsWith("/api/stock-price/")) {
+    const code = normalizeTicker(parsed.pathname.split("/").pop());
+
+    // キャッシュチェック（10分）
+    const CACHE_DURATION = 10 * 60 * 1000;
+    const cached = priceCache.get(code);
+    if (cached && (Date.now() - cached.time < CACHE_DURATION)) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ success: true, data: cached.data, fromCache: true }));
+      return;
+    }
+
+    // レート制限（2秒待機）
+    setTimeout(async () => {
+      try {
+        const query = encodeURIComponent(code);
+        // interval=1d に戻して安定性を優先
+        const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${query}?interval=1d&range=1d`;
+
+        const options = {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          },
+        };
+
+        https.get(targetUrl, options, (apiRes) => {
+          let body = '';
+          console.log(`[Proxy] Yahoo Finance(v8): ${code} - Status: ${apiRes.statusCode}`);
+          
+          if (apiRes.statusCode !== 200) {
+            res.writeHead(apiRes.statusCode, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: `Yahoo API Error: ${apiRes.statusCode}` }));
+            return;
+          }
+
+          apiRes.on('data', chunk => body += chunk);
+          apiRes.on('end', () => {
+            try {
+              const json = JSON.parse(body);
+              
+              if (json?.chart?.error) {
+                const msg = json.chart.error.description || 'Yahoo Error';
+                console.error(`[Proxy] Yahoo返却エラー: ${msg}`);
+                throw new Error(msg);
+              }
+
+              const result = json?.chart?.result?.[0];
+              const meta = result?.meta;
+              
+              if (!meta || typeof meta.regularMarketPrice === 'undefined') {
+                console.error(`[Proxy] 解析失敗(v8): ${body.substring(0, 500)}`);
+                throw new Error('価格データの解析に失敗しました。銘柄コードが正しいか確認してください。');
+              }
+
+              const data = {
+                close: meta.regularMarketPrice || 0,
+                high:  meta.chartPreviousClose || meta.regularMarketPrice || 0, 
+                low:   meta.regularMarketPrice || 0,
+                timestamp: meta.regularMarketTime * 1000 || Date.now()
+              };
+
+              priceCache.set(code, { data, time: Date.now() });
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ success: true, data }));
+            } catch (e) {
+              console.error(`[Proxy] エラー詳細: ${e.message}`);
+              res.writeHead(500, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: e.message }));
+            }
+          });
+        }).on('error', e => {
+          console.error(`[Proxy] 通信エラー: ${e.message}`);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: e.message }));
+        });
+      } catch (err) {
+        console.error(`[Proxy] 例外: ${err.message}`);
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    }, 2000); // 2秒のレート制限
+    return;
+  }
+
   // --- 静的ファイル配信 ---
-  let filePath = path.join(__dirname, parsed.pathname === "/" ? "index.html" : parsed.pathname);
+  let pathname = parsed.pathname === "/" ? "/index.html" : parsed.pathname;
+  let filePath = path.join(__dirname, pathname);
   const ext = path.extname(filePath);
   const contentType = MIME[ext] || "text/plain";
 
