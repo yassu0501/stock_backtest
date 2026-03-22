@@ -3,6 +3,104 @@
 const API_BASE = "";
 const $ = (id) => document.getElementById(id);
 
+// ========================================
+// ノイズエンジン — バックテスト結果に不利方向の歪みを加える
+// ========================================
+class NoiseEngine {
+  // ノイズレベル別パラメータ定義
+  static PRESETS = {
+    off: null,
+    low: {
+      slippage: { base: 0.001, random: 0.001 },
+      gapFilter: null,
+      liquidity: null,
+      delay: null,
+    },
+    medium: {
+      slippage: { base: 0.001, random: 0.001 },
+      gapFilter: { threshold: 0.03, mode: 'probabilistic', probability: 0.5 },
+      liquidity: null,
+      delay: null,
+    },
+    high: {
+      slippage: { base: 0.002, random: 0.003 },
+      gapFilter: { threshold: 0.03, mode: 'probabilistic', probability: 0.5 },
+      liquidity: { minTurnover: 1e8, maxVolumeRatio: 0.05 },
+      delay: { probability: 0.2, maxDays: 1 },
+    },
+  };
+
+  constructor(mode = 'off', seed = null) {
+    this.mode = mode;
+    this.params = NoiseEngine.PRESETS[mode] || null;
+    // シード付き疑似乱数（再現性確保）
+    this.seed = seed;
+    this._rngState = seed !== null ? seed : Math.floor(Math.random() * 2147483647);
+  }
+
+  // シード対応の疑似乱数生成器（0〜1）
+  _random() {
+    this._rngState = (this._rngState * 16807 + 0) % 2147483647;
+    return (this._rngState - 1) / 2147483646;
+  }
+
+  // ノイズが無効かどうか
+  isOff() {
+    return this.mode === 'off' || !this.params;
+  }
+
+  // スリッページ適用: 常に不利方向
+  applySlippage(price, isBuy) {
+    if (this.isOff() || !this.params.slippage) return price;
+    const { base, random } = this.params.slippage;
+    const slipRate = base + this._random() * random;
+    return isBuy ? price * (1 + slipRate) : price * (1 - slipRate);
+  }
+
+  // ギャップフィルター: エントリーをスキップすべきか判定
+  shouldSkipByGap(open, prevClose) {
+    if (this.isOff() || !this.params.gapFilter) return false;
+    const { threshold, mode, probability } = this.params.gapFilter;
+    const gap = Math.abs(open - prevClose) / prevClose;
+    if (gap <= threshold) return false;
+
+    if (mode === 'skip') return true;
+    if (mode === 'probabilistic') return this._random() < probability;
+    return false;
+  }
+
+  // ギャップペナルティ: 追加スリッページを返す（penalty モード用）
+  getGapPenalty(open, prevClose) {
+    if (this.isOff() || !this.params.gapFilter) return 0;
+    const { threshold, mode } = this.params.gapFilter;
+    const gap = Math.abs(open - prevClose) / prevClose;
+    if (gap <= threshold || mode !== 'penalty') return 0;
+    return 0.005; // 0.5%の追加スリッページ
+  }
+
+  // 出来高制約: 約定比率を計算（1.0 = 全量約定）
+  calcFillRatio(positionSize, volume, price) {
+    if (this.isOff() || !this.params.liquidity) return 1.0;
+    const { minTurnover, maxVolumeRatio } = this.params.liquidity;
+    const turnover = volume * price;
+    if (turnover < minTurnover) return 0; // 流動性不足でスキップ
+    if (positionSize > volume * maxVolumeRatio) {
+      return (volume * maxVolumeRatio) / positionSize;
+    }
+    return 1.0;
+  }
+
+  // 約定遅延: 遅延日数を返す（0 = 遅延なし）
+  getDelayDays() {
+    if (this.isOff() || !this.params.delay) return 0;
+    const { probability, maxDays } = this.params.delay;
+    if (this._random() < probability) {
+      return Math.floor(this._random() * maxDays) + 1;
+    }
+    return 0;
+  }
+}
+
 // UI制御: 投資スタイルの切り替え
 window.toggleInvestmentFields = () => {
   const mode = $('investment-mode').value;
@@ -305,6 +403,17 @@ window.addEventListener('load', () => {
 
 updateStrategyHint(); // ヒントのみ即時反映
 
+// --- 銘柄チップのクリックイベント ---
+document.addEventListener('click', (e) => {
+  if (e.target.classList.contains('ticker-chip')) {
+    const ticker = e.target.dataset.ticker;
+    const tickerInput = $('ticker');
+    if (tickerInput) {
+      tickerInput.value = ticker;
+    }
+  }
+});
+
 // ---- 実行ボタン ----
 runBtn.addEventListener("click", async () => {
   const ticker = tickerEl.value.trim();
@@ -320,11 +429,30 @@ runBtn.addEventListener("click", async () => {
     const { data } = await res.json();
     if (!data || data.length < 50) throw new Error("データが不足しています（最低50日必要）");
 
-    const result = runBacktest(data);
-    renderMetrics(result);
-    drawPrice(data, result.signals, result.indicators);
-    drawEquity(result);
-    renderTradeTable(result.trades);
+    // 通常結果（常にOFFで実行）
+    const resultOff = runBacktest(data, null, 'off');
+
+    // ノイズモード取得
+    const noiseMode = getNoiseMode();
+    let resultNoise = null;
+
+    if (noiseMode !== 'off') {
+      // ノイズ適用結果
+      resultNoise = runBacktest(data, null, noiseMode);
+    }
+
+    // メトリクス表示（比較情報付き）
+    renderMetrics(resultOff, resultNoise);
+    drawPrice(data, resultOff.signals, resultOff.indicators);
+    drawEquity(resultOff);
+    renderTradeTable(resultOff.trades);
+
+    // ノイズ比較パネルの表示
+    renderNoiseComparison(resultOff, resultNoise, noiseMode);
+
+    // 相場環境別パフォーマンスの表示
+    renderRegimePerformance(resultOff.regimePerf);
+
     resultAreaEl.classList.remove("hidden");
   } catch (e) {
     showError(e.message);
@@ -370,8 +498,9 @@ runRankingBtn.addEventListener('click', async () => {
 
 // ========================================
 // バックテストエンジン（共通シミュレーター）
+// ノイズエンジン対応: noiseEngine引数でスリッページ等を適用
 // ========================================
-function simulate(data, sigs) {
+function simulate(data, sigs, noiseEngine = null) {
   const capEl = document.querySelector('[data-type="cap"]') || $('cap-v3');
   const cap   = capEl ? parseFloat(capEl.value) : 1_000_000;
   const fee   = (+$('fee').value || 0) / 100;
@@ -380,8 +509,12 @@ function simulate(data, sigs) {
   const invMode = ($('investment-mode') || {value: 'compound'}).value;
   const fixedAmt = +($('fixed-inv-amt') || {value: 1000000}).value;
 
+  const ne = noiseEngine; // ノイズエンジンのエイリアス
+  const noiseActive = ne && !ne.isOff();
+
   let cash = cap, pos = null;
   const trades = [], equityCurve = [];
+  let skippedByNoise = 0; // ノイズによるスキップ回数
 
   data.forEach((bar, i) => {
     const p       = bar.close;   // 当日終値（損切り・利確の判定に使用）
@@ -403,15 +536,50 @@ function simulate(data, sigs) {
 
     // 買いシグナル: 翌日始値でエントリー予約
     if (sig === 'buy' && !pos && nextBar) {
-      const entryPrice = nextBar.open;
+      // ---- ノイズ適用順序（重要）----
+      // 1. ギャップフィルター: エントリー可否判定
+      if (noiseActive && i > 0) {
+        const prevClose = data[i].close;
+        if (ne.shouldSkipByGap(nextBar.open, prevClose)) {
+          skippedByNoise++;
+          // エントリーをスキップ（ギャップが大きい）
+          equityCurve.push({ date: bar.date, equity: Math.round(cash) });
+          return;
+        }
+      }
+
+      let entryPrice = nextBar.open;
+
+      // 2. スリッページ適用（買いは不利方向 = 高くなる）
+      if (noiseActive) {
+        entryPrice = ne.applySlippage(entryPrice, true);
+        // ギャップペナルティの追加スリッページ
+        if (i > 0) {
+          const penalty = ne.getGapPenalty(nextBar.open, data[i].close);
+          if (penalty > 0) entryPrice *= (1 + penalty);
+        }
+      }
+
       const targetAmt  = invMode === 'compound' ? cash : fixedAmt;
       const entryAmt   = Math.min(cash, targetAmt);
-      const shares     = Math.floor(entryAmt * (1 - fee) / entryPrice);
+      let shares       = Math.floor(entryAmt * (1 - fee) / entryPrice);
+
+      // 3. 出来高制約（部分約定）
+      if (noiseActive && shares > 0) {
+        const fillRatio = ne.calcFillRatio(shares, nextBar.volume || 0, entryPrice);
+        if (fillRatio <= 0) {
+          skippedByNoise++;
+          equityCurve.push({ date: bar.date, equity: Math.round(cash) });
+          return; // 流動性不足でスキップ
+        }
+        shares = Math.floor(shares * fillRatio);
+      }
+
       if (shares > 0) {
         cash -= shares * entryPrice * (1 + fee);
         pos = {
           date:   nextBar.date,   // エントリー日は翌日
-          price:  entryPrice,     // 翌日始値
+          price:  entryPrice,     // ノイズ適用後の約定価格
           shares,
         };
       }
@@ -419,7 +587,13 @@ function simulate(data, sigs) {
 
     // 売りシグナル: 翌日始値でエグジット予約
     else if (sig === 'sell' && pos && nextBar) {
-      const exitPrice = nextBar.open;   // 翌日始値
+      let exitPrice = nextBar.open;   // 翌日始値
+
+      // スリッページ適用（売りは不利方向 = 安くなる）
+      if (noiseActive) {
+        exitPrice = ne.applySlippage(exitPrice, false);
+      }
+
       const proceeds  = pos.shares * exitPrice * (1 - fee);
       trades.push({
         buyDate:   pos.date,
@@ -447,7 +621,11 @@ function simulate(data, sigs) {
   // 最終日にポジションが残っている場合は最終終値で強制決済
   if (pos) {
     const lastBar   = data[data.length - 1];
-    const exitPrice = lastBar.close;
+    let exitPrice = lastBar.close;
+    // 最終決済にもスリッページ適用
+    if (noiseActive) {
+      exitPrice = ne.applySlippage(exitPrice, false);
+    }
     const proceeds  = pos.shares * exitPrice * (1 - fee);
     trades.push({
       buyDate:   pos.date,
@@ -482,14 +660,238 @@ function simulate(data, sigs) {
     if (dd > maxDD) maxDD = dd;
   });
 
-  return { trades, equityCurve, totalPnl, returnPct, winRate, maxDD: maxDD * 100, avgHold };
+  // PF（プロフィットファクター）計算
+  const grossWin  = trades.filter(t => t.pnl > 0).reduce((s, t) => s + t.pnl, 0);
+  const grossLoss = Math.abs(trades.filter(t => t.pnl <= 0).reduce((s, t) => s + t.pnl, 0));
+  const pf = grossLoss > 0 ? grossWin / grossLoss : (grossWin > 0 ? 99.9 : 0);
+
+  // ドローダウン日数計算
+  const maxDDDays = calculateMaxDDDays(equityCurve.map(e => e.equity));
+
+  return {
+    trades, equityCurve, totalPnl, returnPct, winRate,
+    maxDD: maxDD * 100, avgHold, pf, skippedByNoise, maxDDDays,
+  };
+}
+
+// ========================================
+// ドローダウン日数（簡易）— DD継続期間の最大値
+// ========================================
+function calculateMaxDDDays(equityCurve) {
+  if (!equityCurve || equityCurve.length < 2) return 0;
+  let peak = equityCurve[0];
+  let ddDays = 0;
+  let maxDDDays = 0;
+
+  for (let i = 1; i < equityCurve.length; i++) {
+    const value = equityCurve[i];
+    if (value >= peak) {
+      peak = value;
+      ddDays = 0;
+    } else {
+      ddDays += 1;
+      if (ddDays > maxDDDays) {
+        maxDDDays = ddDays;
+      }
+    }
+  }
+  return maxDDDays;
+}
+
+// ========================================
+// ノイズ耐性スコア
+// ノイズON総利益 ÷ ノイズOFF総利益
+// ========================================
+function calculateResilience(normalProfit, noiseProfit) {
+  if (normalProfit === 0) return 0;
+  return noiseProfit / normalProfit;
+}
+
+// ========================================
+// 最大トレード依存率
+// 最大利益トレード ÷ 総利益
+// ========================================
+function calculateMaxTradeDependency(profits) {
+  if (!profits || profits.length === 0) return 0;
+  // 利益ベースで計算（損失は無視）
+  const positiveProfits = profits.filter(p => p > 0);
+  if (positiveProfits.length === 0) return 0;
+  const total = positiveProfits.reduce((a, b) => a + b, 0);
+  if (total === 0) return 0;
+  const maxProfit = Math.max(...positiveProfits);
+  return maxProfit / total;
+}
+
+// ========================================
+// 最大ドローダウン回復日数
+// DD発生後、直前ピークに戻るまでの日数
+// ========================================
+function calculateMaxRecoveryDays(equityCurve) {
+  if (!equityCurve || equityCurve.length < 2) return 0;
+  let peak = equityCurve[0];
+  let recoveryDays = 0;
+  let maxRecoveryDays = 0;
+  let inDrawdown = false;
+
+  for (let i = 1; i < equityCurve.length; i++) {
+    const value = equityCurve[i];
+    if (value >= peak) {
+      peak = value;
+      if (inDrawdown) {
+        if (recoveryDays > maxRecoveryDays) {
+          maxRecoveryDays = recoveryDays;
+        }
+        recoveryDays = 0;
+        inDrawdown = false;
+      }
+    } else {
+      inDrawdown = true;
+      recoveryDays += 1;
+    }
+  }
+  // 最終日まで回復していない場合も考慮
+  if (inDrawdown && recoveryDays > maxRecoveryDays) {
+    maxRecoveryDays = recoveryDays;
+  }
+  return maxRecoveryDays;
+}
+
+// ========================================
+// 相場環境判定（シンプル版）
+// 各時点を uptrend / downtrend / range / high_volatility に分類
+// ========================================
+function detectMarketRegimeSeries(closes, N = 20) {
+  const regimes = new Array(closes.length).fill(null);
+
+  for (let i = N; i < closes.length; i++) {
+    const window = closes.slice(i - N, i + 1);
+
+    // 日次リターンを計算
+    const returns = [];
+    for (let j = 1; j < window.length; j++) {
+      returns.push(window[j] / window[j - 1] - 1);
+    }
+
+    // 平均・分散・ボラティリティ
+    const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+    const variance = returns.reduce((a, b) => a + (b - mean) ** 2, 0) / returns.length;
+    const vol = Math.sqrt(variance);
+
+    // 期間リターンとトレンド強度
+    const ret = window[window.length - 1] / window[0] - 1;
+    const trendStrength = Math.abs(ret) / (vol || 1e-8);
+
+    const volThreshold = 0.02;
+
+    if (trendStrength > 1.5) {
+      regimes[i] = ret > 0 ? "uptrend" : "downtrend";
+    } else if (vol > volThreshold) {
+      regimes[i] = "high_volatility";
+    } else {
+      regimes[i] = "range";
+    }
+  }
+
+  return regimes;
+}
+
+// ========================================
+// 環境別パフォーマンス集計
+// 各トレードのエントリー時点の環境で損益を分類
+// ========================================
+function analyzeRegimePerformance(trades, data, regimes) {
+  const result = {
+    uptrend:         { trades: 0, profit: 0, wins: 0 },
+    downtrend:       { trades: 0, profit: 0, wins: 0 },
+    range:           { trades: 0, profit: 0, wins: 0 },
+    high_volatility: { trades: 0, profit: 0, wins: 0 },
+  };
+
+  if (!trades || !data || !regimes) return result;
+
+  // 日付→インデックスのマップを構築
+  const dateIndex = {};
+  data.forEach((bar, i) => { dateIndex[bar.date] = i; });
+
+  trades.forEach(trade => {
+    // エントリー日のインデックスを取得
+    const idx = dateIndex[trade.buyDate];
+    if (idx == null) return;
+
+    // その時点の環境ラベルを取得
+    const regime = regimes[idx] || 'range'; // null の場合はrangeとして扱う
+    if (result[regime]) {
+      result[regime].trades += 1;
+      result[regime].profit += trade.pnl;
+      if (trade.pnl > 0) result[regime].wins += 1;
+    }
+  });
+
+  return result;
+}
+
+// ========================================
+// 環境別パフォーマンスの描画
+// ========================================
+function renderRegimePerformance(regimePerf) {
+  const panel = $('regime-perf-panel');
+  if (!panel) return;
+
+  if (!regimePerf) {
+    panel.classList.add('hidden');
+    return;
+  }
+
+  const labels = {
+    uptrend:         { name: '上昇トレンド', icon: '📈', cls: 'regime-up' },
+    downtrend:       { name: '下降トレンド', icon: '📉', cls: 'regime-down' },
+    range:           { name: 'レンジ',      icon: '↔️', cls: 'regime-range' },
+    high_volatility: { name: '高ボラ',      icon: '⚡', cls: 'regime-vol' },
+  };
+
+  const cards = Object.entries(regimePerf).map(([key, perf]) => {
+    const meta = labels[key] || { name: key, icon: '❓', cls: '' };
+    const winRate = perf.trades > 0 ? (perf.wins / perf.trades * 100).toFixed(1) : '—';
+    const profitClass = perf.profit >= 0 ? 'positive' : 'negative';
+    const profitSign = perf.profit >= 0 ? '+' : '';
+
+    return `
+      <div class="regime-card ${meta.cls}">
+        <div class="regime-header">
+          <span class="regime-icon">${meta.icon}</span>
+          <span class="regime-name">${meta.name}</span>
+        </div>
+        <div class="regime-stats">
+          <div class="regime-stat">
+            <span class="regime-stat-label">取引</span>
+            <span class="regime-stat-value">${perf.trades}回</span>
+          </div>
+          <div class="regime-stat">
+            <span class="regime-stat-label">損益</span>
+            <span class="regime-stat-value ${profitClass}">${profitSign}${Math.round(perf.profit).toLocaleString()}円</span>
+          </div>
+          <div class="regime-stat">
+            <span class="regime-stat-label">勝率</span>
+            <span class="regime-stat-value">${winRate}%</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  panel.innerHTML = `
+    <h2 class="panel-title">相場環境別パフォーマンス</h2>
+    <div class="regime-grid">${cards}</div>
+  `;
+  panel.classList.remove('hidden');
 }
 
 // 既存の runBacktest を更新
 // ========================================
 // バックテスト実行（UI連携用）
+// noiseMode: 'off' | 'low' | 'medium' | 'high'
 // ========================================
-function runBacktest(data, overrideStrategy = null) {
+function runBacktest(data, overrideStrategy = null, noiseMode = 'off') {
   const strategy = overrideStrategy || strategyEl.value;
   let res;
 
@@ -513,8 +915,29 @@ function runBacktest(data, overrideStrategy = null) {
     default:          res = signalBB(data);
   }
 
-  const result = simulate(data, res.sigs);
-  return { ...result, signals: res.sigs, indicators: res.lines };
+  // ノイズエンジンを生成（OFF時はnull）
+  const noiseEngine = (noiseMode && noiseMode !== 'off')
+    ? new NoiseEngine(noiseMode, 42) // seed=42で再現性確保
+    : null;
+
+  // ノイズ適用時はシグナル配列をコピーして使用（元の配列を破壊しない）
+  const sigsForSim = noiseEngine ? [...res.sigs] : res.sigs;
+  const result = simulate(data, sigsForSim, noiseEngine);
+
+  // 相場環境判定 & 環境別パフォーマンス集計
+  const closes = data.map(d => d.close);
+  const regimes = detectMarketRegimeSeries(closes, 20);
+  const regimePerf = analyzeRegimePerformance(result.trades, data, regimes);
+
+  return { ...result, signals: res.sigs, indicators: res.lines, regimePerf };
+}
+
+// ========================================
+// ノイズモードの取得ヘルパー
+// ========================================
+function getNoiseMode() {
+  const el = $('noise-mode');
+  return el ? el.value : 'off';
 }
 
 /**
@@ -526,17 +949,23 @@ function runBacktest(data, overrideStrategy = null) {
 class AutomaticStrategyRanking {
   constructor() {
     this.results = {};
+    this.noiseResults = {};
     this.allResultsArray = [];
+    this.noiseResultsArray = [];
     this.currentSort = { key: 'totalPnl', order: 'desc' };
   }
 
   async runFullRanking(code, priceData) {
     console.log(`[自動ランキング開始] ${code} - ${ALL_STRATEGIES.length}戦略`);
     this.results = {};
+    this.noiseResults = {}; // ノイズ適用結果
+
+    const noiseMode = getNoiseMode();
 
     for (const strategy of ALL_STRATEGIES) {
       try {
-        const result = runBacktest(priceData, strategy.id);
+        // 通常結果（OFF）
+        const result = runBacktest(priceData, strategy.id, 'off');
         this.results[strategy.id] = {
           strategyId: strategy.id,
           strategyName: strategy.name,
@@ -546,12 +975,27 @@ class AutomaticStrategyRanking {
           tradesCount: result.trades.length,
           pf: this.calculatePF(result.trades)
         };
+
+        // ノイズ適用結果
+        if (noiseMode !== 'off') {
+          const noiseResult = runBacktest(priceData, strategy.id, noiseMode);
+          this.noiseResults[strategy.id] = {
+            strategyId: strategy.id,
+            strategyName: strategy.name,
+            totalPnl: noiseResult.totalPnl,
+            winRate: noiseResult.winRate,
+            maxDD: noiseResult.maxDD,
+            tradesCount: noiseResult.trades.length,
+            pf: this.calculatePF(noiseResult.trades)
+          };
+        }
       } catch (err) {
         console.warn(`⚠️ ${strategy.name} エラー:`, err.message);
       }
     }
 
     this.allResultsArray = Object.values(this.results);
+    this.noiseResultsArray = Object.values(this.noiseResults);
     this.generateAndDisplayRanking();
     this.initializeTabs();
   }
@@ -649,6 +1093,16 @@ class AutomaticStrategyRanking {
   }
 
   generateAllTable() {
+    const noiseMode = getNoiseMode();
+    const hasNoise = noiseMode !== 'off' && this.noiseResultsArray.length > 0;
+
+    // ノイズ適用時の順位計算（ΔRank用）
+    let noiseRankMap = {};
+    if (hasNoise) {
+      const noiseSorted = [...this.noiseResultsArray].sort((a, b) => b.totalPnl - a.totalPnl);
+      noiseSorted.forEach((r, i) => { noiseRankMap[r.strategyId] = i + 1; });
+    }
+
     const sorted = [...this.allResultsArray].sort((a, b) => {
       const { key, order } = this.currentSort;
       let valA = a[key];
@@ -659,17 +1113,40 @@ class AutomaticStrategyRanking {
       return order === 'asc' ? valA - valB : valB - valA;
     });
 
-    const rows = sorted.map((r, i) => `
-      <tr onclick="applyRankingStrategy('${r.strategyId}')" class="ranking-row">
-        <td>${i+1}</td>
-        <td class="strategy-name">${r.strategyName}</td>
-        <td class="pnl ${r.totalPnl >= 0 ? 'positive' : 'negative'}">${r.totalPnl >= 0 ? '+' : ''}${Math.round(r.totalPnl).toLocaleString()}</td>
-        <td>${r.winRate.toFixed(1)}%</td>
-        <td>${r.pf >= 99.9 ? '∞' : r.pf.toFixed(2)}</td>
-        <td>${r.maxDD.toFixed(1)}%</td>
-        <td>${r.tradesCount}</td>
-      </tr>
-    `).join('');
+    const rows = sorted.map((r, i) => {
+      const offRank = i + 1;
+      let noiseRankCell = '';
+      let deltaRankCell = '';
+
+      if (hasNoise) {
+        const noiseRank = noiseRankMap[r.strategyId] || '-';
+        const delta = typeof noiseRank === 'number' ? offRank - noiseRank : 0;
+        const deltaClass = delta > 0 ? 'rank-up' : delta < 0 ? 'rank-down' : 'rank-same';
+        const deltaText = delta > 0 ? `▲${delta}` : delta < 0 ? `▼${Math.abs(delta)}` : '―';
+        noiseRankCell = `<td>${noiseRank}</td>`;
+        deltaRankCell = `<td class="${deltaClass}">${deltaText}</td>`;
+      }
+
+      return `
+        <tr onclick="applyRankingStrategy('${r.strategyId}')" class="ranking-row">
+          <td>${offRank}</td>
+          <td class="strategy-name">${r.strategyName}</td>
+          <td class="pnl ${r.totalPnl >= 0 ? 'positive' : 'negative'}">${r.totalPnl >= 0 ? '+' : ''}${Math.round(r.totalPnl).toLocaleString()}</td>
+          <td>${r.winRate.toFixed(1)}%</td>
+          <td>${r.pf >= 99.9 ? '∞' : r.pf.toFixed(2)}</td>
+          <td>${r.maxDD.toFixed(1)}%</td>
+          <td>${r.tradesCount}</td>
+          ${noiseRankCell}
+          ${deltaRankCell}
+        </tr>
+      `;
+    }).join('');
+
+    // ノイズ列のヘッダー
+    const noiseHeaders = hasNoise
+      ? `<th class="sortable" title="ノイズ適用時の順位">🎲順位</th>
+         <th title="順位変動（Δ小=安定, Δ大=脆弱）">ΔRank</th>`
+      : '';
 
     return `
       <div class="ranking-section">
@@ -685,6 +1162,7 @@ class AutomaticStrategyRanking {
                 <th class="sortable" onclick="rankingInstance.sortTable('pf')">PF</th>
                 <th class="sortable" onclick="rankingInstance.sortTable('maxDD')">最大下落率(%)</th>
                 <th class="sortable" onclick="rankingInstance.sortTable('tradesCount')">件数</th>
+                ${noiseHeaders}
               </tr>
             </thead>
             <tbody>${rows}</tbody>
@@ -1561,19 +2039,140 @@ function signalStdBreak(data) {
 // ========================================
 // 描画
 // ========================================
-function renderMetrics({ totalPnl, returnPct, winRate, maxDD, trades, avgHold }) {
+function renderMetrics(resultOff, resultNoise = null) {
+  const { totalPnl, returnPct, winRate, maxDD, trades, avgHold, maxDDDays } = resultOff;
   setMetric("m-total-pnl", `${totalPnl >= 0 ? "+" : ""}${totalPnl.toLocaleString()}円`, totalPnl);
   setMetric("m-return", `${returnPct >= 0 ? "+" : ""}${returnPct.toFixed(2)}%`, returnPct);
   setMetric("m-win-rate", `${winRate.toFixed(1)}%`, winRate - 50);
   setMetric("m-max-dd", `-${maxDD.toFixed(2)}%`, -1);
   setMetric("m-trades", `${trades.length}回`, 0);
   setMetric("m-avg-hold", `${avgHold.toFixed(1)}日`, 0);
+  setMetric("m-max-dd-days", `${maxDDDays}日`, maxDDDays > 30 ? -1 : 0);
+
+  // ① ノイズ耐性スコア
+  if (resultNoise) {
+    const resilience = calculateResilience(resultOff.totalPnl, resultNoise.totalPnl);
+    const rSign = resilience >= 0.7 ? 1 : resilience >= 0.4 ? 0.5 : -1;
+    setMetric("m-resilience", resilience.toFixed(2), rSign);
+  } else {
+    setMetric("m-resilience", "—", 0);
+  }
+
+  // ② 最大トレード依存率
+  const profits = trades.map(t => t.pnl);
+  const dependency = calculateMaxTradeDependency(profits);
+  const depPct = (dependency * 100).toFixed(0);
+  const depSign = dependency > 0.5 ? -1 : dependency > 0.3 ? 0.5 : 1;
+  setMetric("m-max-dependency", `${depPct}%`, depSign);
+
+  // ③ 最大DD回復日数
+  const equityValues = resultOff.equityCurve.map(e => e.equity);
+  const maxRecovery = calculateMaxRecoveryDays(equityValues);
+  setMetric("m-max-recovery", `${maxRecovery}日`, maxRecovery > 60 ? -1 : maxRecovery > 30 ? 0.5 : 0);
 }
 
 function setMetric(id, text, sign) {
-  const el = document.getElementById(id).querySelector(".metric-value");
-  el.textContent = text;
-  el.className = "metric-value" + (sign > 0 ? " positive" : sign < 0 ? " negative" : "");
+  const el = document.getElementById(id);
+  if (!el) return; // 要素が存在しない場合はスキップ
+  const valEl = el.querySelector(".metric-value");
+  valEl.textContent = text;
+  // sign: >0=緑, <0=赤, 0.5=黄, 0=デフォルト
+  let cls = "metric-value";
+  if (sign > 0 && sign !== 0.5) cls += " positive";
+  else if (sign === 0.5) cls += " warn";
+  else if (sign < 0) cls += " negative";
+  valEl.className = cls;
+}
+
+// ========================================
+// ノイズ比較パネルの描画
+// ========================================
+function renderNoiseComparison(resultOff, resultNoise, noiseMode) {
+  const panel = $('noise-comparison-panel');
+  if (!panel) return;
+
+  if (!resultNoise || noiseMode === 'off') {
+    panel.classList.add('hidden');
+    return;
+  }
+
+  const modeLabels = { low: 'Low', medium: 'Medium', high: 'High' };
+  const modeLabel = modeLabels[noiseMode] || noiseMode;
+
+  // 差分計算
+  const dPnl     = resultNoise.totalPnl - resultOff.totalPnl;
+  const dReturn  = resultNoise.returnPct - resultOff.returnPct;
+  const dWinRate = resultNoise.winRate - resultOff.winRate;
+  const dPF      = resultNoise.pf - resultOff.pf;
+  const dMaxDD   = resultNoise.maxDD - resultOff.maxDD;
+
+  // 差分の表示ヘルパー
+  const fmtDiff = (val, unit = '', decimals = 1) => {
+    const sign = val >= 0 ? '+' : '';
+    return `${sign}${val.toFixed(decimals)}${unit}`;
+  };
+  const diffClass = (val, invert = false) => {
+    const adjusted = invert ? -val : val;
+    return adjusted > 0 ? 'positive' : adjusted < 0 ? 'negative' : '';
+  };
+
+  panel.innerHTML = `
+    <div class="noise-comparison-header">
+      <span class="noise-badge noise-${noiseMode}">🎲 ノイズ: ${modeLabel}</span>
+      <span class="noise-skip-info">スキップ: ${resultNoise.skippedByNoise || 0}回</span>
+    </div>
+    <div class="noise-comparison-grid">
+      <div class="noise-comp-item">
+        <div class="comp-label">総損益</div>
+        <div class="comp-row">
+          <span class="comp-off">OFF: ${resultOff.totalPnl >= 0 ? '+' : ''}${resultOff.totalPnl.toLocaleString()}円</span>
+          <span class="comp-on">ON: ${resultNoise.totalPnl >= 0 ? '+' : ''}${resultNoise.totalPnl.toLocaleString()}円</span>
+          <span class="comp-diff ${diffClass(dPnl)}">${fmtDiff(dPnl, '円', 0)}</span>
+        </div>
+      </div>
+      <div class="noise-comp-item">
+        <div class="comp-label">リターン</div>
+        <div class="comp-row">
+          <span class="comp-off">OFF: ${resultOff.returnPct.toFixed(2)}%</span>
+          <span class="comp-on">ON: ${resultNoise.returnPct.toFixed(2)}%</span>
+          <span class="comp-diff ${diffClass(dReturn)}">${fmtDiff(dReturn, '%', 2)}</span>
+        </div>
+      </div>
+      <div class="noise-comp-item">
+        <div class="comp-label">勝率</div>
+        <div class="comp-row">
+          <span class="comp-off">OFF: ${resultOff.winRate.toFixed(1)}%</span>
+          <span class="comp-on">ON: ${resultNoise.winRate.toFixed(1)}%</span>
+          <span class="comp-diff ${diffClass(dWinRate)}">${fmtDiff(dWinRate, '%')}</span>
+        </div>
+      </div>
+      <div class="noise-comp-item">
+        <div class="comp-label">PF</div>
+        <div class="comp-row">
+          <span class="comp-off">OFF: ${resultOff.pf >= 99.9 ? '∞' : resultOff.pf.toFixed(2)}</span>
+          <span class="comp-on">ON: ${resultNoise.pf >= 99.9 ? '∞' : resultNoise.pf.toFixed(2)}</span>
+          <span class="comp-diff ${diffClass(dPF)}">${fmtDiff(dPF, '', 2)}</span>
+        </div>
+      </div>
+      <div class="noise-comp-item">
+        <div class="comp-label">最大DD</div>
+        <div class="comp-row">
+          <span class="comp-off">OFF: -${resultOff.maxDD.toFixed(2)}%</span>
+          <span class="comp-on">ON: -${resultNoise.maxDD.toFixed(2)}%</span>
+          <span class="comp-diff ${diffClass(dMaxDD, true)}">${fmtDiff(dMaxDD, '%', 2)}</span>
+        </div>
+      </div>
+      <div class="noise-comp-item">
+        <div class="comp-label">取引回数</div>
+        <div class="comp-row">
+          <span class="comp-off">OFF: ${resultOff.trades.length}回</span>
+          <span class="comp-on">ON: ${resultNoise.trades.length}回</span>
+          <span class="comp-diff">${resultNoise.trades.length - resultOff.trades.length}回</span>
+        </div>
+      </div>
+    </div>
+  `;
+  panel.classList.remove('hidden');
 }
 
 function drawPrice(data, sigs, lines) {

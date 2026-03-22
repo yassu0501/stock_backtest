@@ -20,24 +20,33 @@ const MIME = {
   ".js": "application/javascript",
 };
 
-// 銘柄コードの正規化（自動補完のみ・エラーなし）
+// 銘柄コードの正規化
 function normalizeTicker(ticker) {
   let t = (ticker || '').trim().toUpperCase();
+  if (!t) return '7203.T';
 
-  // 4文字かつ先頭が数字 → .T を自動付与（例: 7203 → 7203.T, 285A → 285A.T）
+  // 主要な指数のエイリアスマッピング（ゆれを許容）
+  if (t.includes('日経平均') || t.includes('N225') || t.includes('NIKKEI')) return '^N225';
+  // TOPIX やグロースは指数シンボル(^TPX)よりもETF(1306.T/2516.T)の方がデータ取得が安定するためそちらを利用
+  if (t.includes('TOPIX') || t.includes('トピックス')) return '1306.T';
+  if (t.includes('マザーズ') || t.includes('GROWTH250') || t.includes('グロース250') || t.includes('MTHR')) return '2516.T';
+  if (t.includes('S&P500') || t.includes('SP500')) return '^GSPC';
+  if (t.includes('NASDAQ') || t.includes('ナスダック')) return '^IXIC';
+  if (t.includes('NYダウ') || t.includes('DOW')) return '^DJI';
+
+  // 4文字かつ先頭が数字 → .T を自動付与
   if (/^\d[A-Z0-9]{3}$/.test(t)) {
     t = t + '.T';
   }
 
-  // .t（小文字）→ .T に統一（例: 7203.t → 7203.T）
+  // .t（小文字）→ .T に統一
   t = t.replace(/\.t$/, '.T');
 
   return t;
 }
 
-// Yahoo Finance から日足データを取得（株式分割対応・リトライ付き）
+// Yahoo Finance から日足データを取得
 function fetchYahooCSV(ticker, period1, period2) {
-  // 銘柄コードを正規化
   const normalized = normalizeTicker(ticker);
   return fetchWithRetry(normalized, period1, period2, 3);
 }
@@ -62,7 +71,7 @@ function fetchWithRetry(ticker, period1, period2, retries) {
   });
 }
 
-// 実際のHTTPリクエスト（単回実行）
+// 実際のHTTPリクエスト
 function fetchOnce(ticker, period1, period2) {
   return new Promise((resolve, reject) => {
     const encodedTicker = encodeURIComponent(ticker);
@@ -71,23 +80,16 @@ function fetchOnce(ticker, period1, period2) {
     const options = {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
-        'Cache-Control': 'no-cache',
       },
     };
 
     const req = https.get(targetUrl, options, (res) => {
+      if (res.statusCode === 404) {
+        reject(new Error(`404: 銘柄コード「${ticker}」は存在しないか、データが見つかりません`));
+        return;
+      }
       if (res.statusCode === 403) {
         reject(new Error('403: Yahoo Financeにアクセスできませんでした'));
-        return;
-      }
-      if (res.statusCode === 429) {
-        reject(new Error('429: リクエスト制限中です'));
-        return;
-      }
-      if (res.statusCode === 503) {
-        reject(new Error('503: Yahoo Financeが一時的に利用不可です'));
         return;
       }
       if (res.statusCode !== 200) {
@@ -100,64 +102,55 @@ function fetchOnce(ticker, period1, period2) {
       res.on('end', () => {
         try {
           const json = JSON.parse(data);
-
           if (json.chart.error) {
-            const msg = json.chart.error.description || '不明なエラー';
-            reject(new Error(`Yahoo Finance エラー: ${msg}`));
+            reject(new Error(`Yahoo API: ${json.chart.error.description}`));
+            return;
+          }
+          const result = json.chart.result?.[0];
+          if (!result || !result.timestamp) {
+            reject(new Error('株価データが見つかりません。期間やシンボルを確認してください。'));
             return;
           }
 
-          if (!json.chart.result || json.chart.result.length === 0) {
-            reject(new Error('データが見つかりませんでした。銘柄コードを確認してください。'));
-            return;
-          }
-
-          const result     = json.chart.result[0];
           const timestamps = result.timestamp;
-          const ohlcv      = result.indicators.quote[0];
-          const adjclose   = result.indicators.adjclose?.[0]?.adjclose;
+          const ohlcv = result.indicators.quote[0];
+          const adjclose = result.indicators.adjclose?.[0]?.adjclose || []; // adjcloseがない場合は空配列
 
           const rows = timestamps.map((ts, i) => {
-            const rawClose = ohlcv.close[i];
-            const adjClose = adjclose?.[i];
+            const open  = ohlcv.open[i];
+            const high  = ohlcv.high[i];
+            const low   = ohlcv.low[i];
+            const close = ohlcv.close[i];
 
-            // 調整比率の適用
-            const ratio = (rawClose && adjClose && rawClose !== 0)
-              ? adjClose / rawClose
-              : 1;
+            if (close === null || close === undefined) return null;
+
+            // 指数の場合など、調整後終値がない場合は通常の終値を使用
+            const adj = (adjclose[i] !== undefined && adjclose[i] !== null) ? adjclose[i] : close;
+            const ratio = (close !== 0) ? adj / close : 1;
 
             return {
-              date:   new Date(ts * 1000).toISOString().split('T')[0],
-              open:   ohlcv.open[i]  ? Math.round(ohlcv.open[i]  * ratio * 10) / 10 : null,
-              high:   ohlcv.high[i]  ? Math.round(ohlcv.high[i]  * ratio * 10) / 10 : null,
-              low:    ohlcv.low[i]   ? Math.round(ohlcv.low[i]   * ratio * 10) / 10 : null,
-              close:  adjClose       ? Math.round(adjClose               * 10) / 10
-                    : rawClose       ? Math.round(rawClose               * 10) / 10 : null,
+              date: new Date(ts * 1000).toISOString().split('T')[0],
+              open:   Math.round((open  || close) * ratio * 10) / 10,
+              high:   Math.round((high  || close) * ratio * 10) / 10,
+              low:    Math.round((low   || close) * ratio * 10) / 10,
+              close:  Math.round(adj              * 10) / 10,
               volume: ohlcv.volume[i] || 0,
             };
-          }).filter((r) => r.close !== null);
+          }).filter(r => r !== null && r.close !== 0);
 
           if (rows.length === 0) {
-            reject(new Error('取得できたデータが0件です。期間を変更してください。'));
+            reject(new Error('取得できた有効なデータが0件です'));
             return;
           }
-
           resolve(rows);
-
         } catch (e) {
-          reject(new Error('レスポンスの解析に失敗しました: ' + e.message));
+          reject(new Error('データ解析失敗: ' + e.message));
         }
       });
     });
 
-    req.on('error', (e) => {
-      reject(new Error('ネットワークエラー: ' + e.message));
-    });
-
-    req.setTimeout(10000, () => {
-      req.destroy();
-      reject(new Error('タイムアウト: 接続が10秒を超えました'));
-    });
+    req.on('error', (e) => reject(new Error('通信エラー: ' + e.message)));
+    req.setTimeout(10000, () => { req.destroy(); reject(new Error('タイムアウト')); });
   });
 }
 

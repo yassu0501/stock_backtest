@@ -96,9 +96,18 @@
     <section class="panel config-panel">
       <h2 class="panel-title">設定</h2>
       <div class="config-grid">
-        <div class="config-item tiny">
+        <div class="config-item wide ticker-config">
           <label>銘柄コード <span class="hint">.T</span></label>
-          <input type="text" id="ticker" value="7203.T" placeholder="7203.T" />
+          <div class="ticker-row">
+            <input type="text" id="ticker" value="7203.T" placeholder="7203.T" />
+            <div class="ticker-chips">
+              <span class="ticker-chip" data-ticker="日経平均">日経平均</span>
+              <span class="ticker-chip" data-ticker="TOPIX">TOPIX</span>
+              <span class="ticker-chip" data-ticker="GROWTH250">グロース250</span>
+              <span class="ticker-chip" data-ticker="S&P500">S&P500</span>
+              <span class="ticker-chip" data-ticker="NASDAQ">NASDAQ</span>
+            </div>
+          </div>
         </div>
         <div class="config-item tiny">
           <label>取得期間</label>
@@ -355,6 +364,15 @@
           </div>
         </div>
         <div class="config-item">
+          <label>🎲 ノイズモード</label>
+          <select id="noise-mode">
+            <option value="off" selected>OFF（通常）</option>
+            <option value="low">Low（スリッページのみ）</option>
+            <option value="medium">Medium（スリッページ＋ギャップ）</option>
+            <option value="high">High（全ノイズ適用）</option>
+          </select>
+        </div>
+        <div class="config-item">
           <div class="freq-label">取引回数モード</div>
           <div class="freq-btns">
             <button class="freq-btn active-normal" id="btn-normal" onclick="setFreqMode('normal')">通常</button>
@@ -434,7 +452,33 @@
             <div class="metric-label">平均保有日数</div>
             <div class="metric-value">-</div>
           </div>
+          <div class="metric-card" id="m-max-dd-days">
+            <div class="metric-label">Max DD 日数</div>
+            <div class="metric-value">-</div>
+          </div>
+          <div class="metric-card" id="m-resilience">
+            <div class="metric-label">ノイズ耐性</div>
+            <div class="metric-value">—</div>
+          </div>
+          <div class="metric-card" id="m-max-dependency">
+            <div class="metric-label">最大依存率</div>
+            <div class="metric-value">-</div>
+          </div>
+          <div class="metric-card" id="m-max-recovery">
+            <div class="metric-label">最大回復日数</div>
+            <div class="metric-value">-</div>
+          </div>
         </div>
+      </section>
+
+      <!-- ノイズ比較パネル（初期は非表示） -->
+      <section id="noise-comparison-panel" class="panel noise-panel hidden">
+        <!-- JSで動的に生成 -->
+      </section>
+
+      <!-- 相場環境別パフォーマンスパネル（初期は非表示） -->
+      <section id="regime-perf-panel" class="panel regime-panel hidden">
+        <!-- JSで動的に生成 -->
       </section>
 
       <!-- 株価チャート -->

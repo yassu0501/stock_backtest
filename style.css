@@ -269,7 +269,7 @@ input[type=number] {
 /* メトリクス */
 .metrics-grid {
   display: grid;
-  grid-template-columns: 1.25fr 1.25fr 0.875fr 0.875fr 0.875fr 0.875fr;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 12px;
   margin-bottom: 32px;
 }
@@ -326,6 +326,7 @@ input[type=number] {
 }
 .metric-value.positive { color: var(--accent); text-shadow: 0 0 10px var(--accent-glow); }
 .metric-value.negative { color: var(--danger); text-shadow: 0 0 10px rgba(255, 77, 77, 0.2); }
+.metric-value.warn { color: var(--warn); text-shadow: 0 0 10px rgba(251, 191, 36, 0.2); }
 
 /* チャートコンテナ */
 .chart-container {
@@ -1238,3 +1239,309 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   .monitor-header-row { flex-direction: column; align-items: flex-start; gap: 12px; }
 }
 
+/* ========================================
+   🎲 ノイズシステム関連スタイル
+   ======================================== */
+
+/* ノイズモード選択セレクト */
+#noise-mode {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  outline: none;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+#noise-mode:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+/* ノイズ比較パネル */
+.noise-panel {
+  border: 1px solid rgba(147, 51, 234, 0.3);
+  background: rgba(147, 51, 234, 0.05);
+  background-image: var(--glass);
+  animation: fadeIn 0.4s ease-out;
+}
+
+.noise-comparison-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(147, 51, 234, 0.2);
+}
+
+.noise-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+.noise-badge.noise-low {
+  background: rgba(59, 130, 246, 0.12);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+.noise-badge.noise-medium {
+  background: rgba(251, 191, 36, 0.12);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+.noise-badge.noise-high {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.noise-skip-info {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+
+/* 比較グリッド */
+.noise-comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+}
+
+.noise-comp-item {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  transition: background 0.2s;
+}
+.noise-comp-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.comp-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+  font-family: var(--font-mono);
+}
+
+.comp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.comp-off, .comp-on {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.comp-off {
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.03);
+}
+.comp-on {
+  color: #c4b5fd;
+  background: rgba(147, 51, 234, 0.1);
+}
+
+.comp-diff {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: auto;
+}
+.comp-diff.positive {
+  color: #10b981 !important;
+  background: rgba(16, 185, 129, 0.1);
+}
+.comp-diff.negative {
+  color: #ef4444 !important;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* ΔRank スタイル */
+.rank-up {
+  color: #10b981 !important;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+.rank-down {
+  color: #ef4444 !important;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+.rank-same {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* レスポンシブ: ノイズ比較パネル */
+@media (max-width: 600px) {
+  .noise-comparison-grid {
+    grid-template-columns: 1fr;
+  }
+  .comp-row {
+    font-size: 0.75rem;
+  }
+}
+
+.ticker-config {
+  grid-column: 1 / -1 !important; /* グリッドの全幅を使用 */
+  margin-bottom: 20px;
+}
+.ticker-row {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  width: 100%;
+}
+.ticker-row input {
+  flex: 0 0 140px; /* 入力欄を少し広げつつ固定 */
+  margin-bottom: 0 !important;
+}
+.ticker-chips {
+  display: flex;
+  flex-wrap: nowrap; /* 縦に並ばせない */
+  overflow-x: auto;  /* はみ出す場合は横スクロール */
+  gap: 8px;
+  flex: 1;
+  padding-bottom: 4px; /* スクロールバー用のバッファ */
+}
+.ticker-chips::-webkit-scrollbar {
+  height: 3px;
+}
+.ticker-chip {
+  font-size: 0.65rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.ticker-chip:hover {
+  background: rgba(0, 242, 173, 0.1);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ========================================
+   📊 相場環境別パフォーマンス
+   ======================================== */
+.regime-panel {
+  animation: fadeIn 0.4s ease-out;
+}
+
+.regime-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .regime-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 500px) {
+  .regime-grid { grid-template-columns: 1fr; }
+}
+
+.regime-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  transition: transform 0.2s, background 0.2s;
+}
+.regime-card:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* 環境ごとの左ボーダー色 */
+.regime-card.regime-up {
+  border-left: 3px solid #10b981;
+}
+.regime-card.regime-down {
+  border-left: 3px solid #ef4444;
+}
+.regime-card.regime-range {
+  border-left: 3px solid #3b82f6;
+}
+.regime-card.regime-vol {
+  border-left: 3px solid #fbbf24;
+}
+
+.regime-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.regime-icon {
+  font-size: 1.2rem;
+}
+.regime-name {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.03em;
+}
+
+.regime-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.regime-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.regime-stat-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.regime-stat-value {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.regime-stat-value.positive {
+  color: #10b981 !important;
+}
+.regime-stat-value.negative {
+  color: #ef4444 !important;
+}
