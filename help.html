@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>使い方・戦略ガイド | 億り人爆誕装置</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="help-page">
+  <div class="app">
+    <header class="header">
+      <div class="header-inner" style="justify-content: flex-start;">
+        <div class="logo">億り人<span>爆誕装置</span></div>
+        <div class="subtitle">使い方・戦略ガイド</div>
+      </div>
+    </header>
+
+    <main class="help-content">
+      <section class="panel">
+        <h2 class="panel-title">1. 基本的な使い方</h2>
+        <div class="help-text">
+          <p>このツールは、過去の株価データを用いて「もしその戦略で売買していたらどれくらい儲かったか？」を検証するバックテストエンジンです。</p>
+          <ol>
+            <li><strong>銘柄の選択:</strong> 左上の設定パネルで銘柄コードを入力するか、チップをクリックして選択します（例: 7203.T）。</li>
+            <li><strong>取得期間:</strong> テストする過去の期間（半年〜5年）を選びます。期間が長いほど信頼性は高いですが、相場の環境変化の影響も受けます。</li>
+            <li><strong>戦略の選択:</strong> 検証したい売買ルール（戦略）を選びます。戦略ごとにパラメータ（移動平均の日数など）が表示されますので、自由に変更可能です。</li>
+            <li><strong>資金・リスク設定:</strong> 初期資金や、損切り（ロスカット）・利確（テイクプロフィット）のパーセンテージを設定します。</li>
+            <li><strong>バックテスト実行:</strong> ボタンを押すとテストが走り、中央のチャートや右のパネルに結果が表示されます。</li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">2. 重要コンポーネント: ノイズエンジン</h2>
+        <div class="help-text">
+          <p>実際の株式市場では、シミュレーション通りには買えない（スリッページ）といった「ノイズ」が存在します。本ツールでは、このノイズをどれだけシミュレーションに加味するかを設定できます。</p>
+          <ul>
+            <li><strong>Off:</strong> 理想的な環境。スリッページや出来高制限を無視して、必ず約定したものとして計算します。</li>
+            <li><strong>Low:</strong> 約定価格が少し不利になるスリッページ（0.2%程度）を適用します。</li>
+            <li><strong>Medium:</strong> スリッページに加え、窓開け（ギャップ）が大きい場合はエントリーを見送ります。</li>
+            <li><strong>High:</strong> 厳しい現実環境。スリッページ、ギャップフィルターに加え、出来高不足（流動性枯渇）による部分約定やスキップをシミュレートします。</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">3. 専門用語の解説</h2>
+        <div class="help-text">
+          <table>
+            <tr>
+              <th>用語</th>
+              <th>解説</th>
+            </tr>
+            <tr>
+              <td><strong>プロフィットファクター (PF)</strong></td>
+              <td>総利益を総損失で割った数値。1.0以上ならトータルで利益が出ています。一般的に1.5以上だと非常に優秀な戦略とされます。</td>
+            </tr>
+            <tr>
+              <td><strong>最大ドローダウン</strong></td>
+              <td>資産のピークから、最も大きく落ち込んだときの減少率。この数値が大きいほど、精神的ストレスが大きい戦略（ハイリスク）と言えます。</td>
+            </tr>
+            <tr>
+              <td><strong>VWAP（出来高加重平均価格）</strong></td>
+              <td>価格と出来高から算出した「その日の平均的な約定価格」。機関投資家が売買の基準ラインとして使うことで有名です。</td>
+            </tr>
+            <tr>
+              <td><strong>スリッページ</strong></td>
+              <td>注文した価格と、実際に約定した価格の「ズレ」のこと。買いの場合は予定より高く、売りの場合は安く約定することが多い。</td>
+            </tr>
+            <tr>
+              <td><strong>単利 / 複利</strong></td>
+              <td>「単利」は毎回固定の金額（例：100万円）で取引します。「複利」は利益が出たらその利益も次の取引に全額回す雪だるま式です。</td>
+            </tr>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">4. 機関投資家トラッキング戦略の解説</h2>
+        <div class="help-text">
+          <p>このツールに搭載されている独自アルゴリズムは、大口（機関投資家）の動向を追いかけることを目的とした高度な戦略です。</p>
+          
+          <h3 class="strategy-name">A. 高値更新 + 出来高爆発 (Volume Breakdown)</h3>
+          <p>一度機関投資家によって大量の買い戻し（直近の出来高急増）が行われた後、価格が下がらずに高値圏をキープしたまま「出来高が枯渇（売り手不在）」したタイミングを狙ってエントリーします。出来高が再び爆発するタイミングで売り抜けます。</p>
+          
+          <h3 class="strategy-name">B. VWAP トレンド追認 (VWAP Institutional)</h3>
+          <p>価格がVWAP（機関の平均建値）を下から上に突き抜けた時を「機関が買い方に回った」と判断してエントリーします。逆にVWAPを割り込んだら利確・損切りの合図とみなします。明確なトレンド相場に強いのが特徴です。</p>
+
+          <h3 class="strategy-name">C. 出来高減衰トレンド追認 (Volume Decay)</h3>
+          <p>長期エッジ（50日MAの上昇トレンド）がある中で、一時的に出来高が20日平均の70%未満に急減した「健全な押し目」を拾います。買われすぎ（RSI 80以上）や売られすぎによるノイズを排除して安全なポイントを探ります。</p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">5. 基本戦略の解説（売買条件）</h2>
+        <div class="help-text">
+          <p>従来のテクニカル分析に基づいた主要なトレード戦略です。</p>
+
+          <h3 class="strategy-name">トレンド・ブレイクアウト系</h3>
+          <div class="strategy-grid">
+            <div class="strategy-card">
+              <h4>移動平均クロス</h4>
+              <div class="condition"><span class="badge buy">買</span> 短期MAが長期MAを下から上に抜けた時（ゴールデンクロス）</div>
+              <div class="condition"><span class="badge sell">売</span> 短期MAが長期MAを上から下に抜けた時（デッドクロス）</div>
+            </div>
+            <div class="strategy-card">
+              <h4>MACD</h4>
+              <div class="condition"><span class="badge buy">買</span> MACDラインがシグナルラインを上抜けた時</div>
+              <div class="condition"><span class="badge sell">売</span> MACDラインがシグナルラインを下抜けた時</div>
+            </div>
+            <div class="strategy-card">
+              <h4>パラボリックSAR</h4>
+              <div class="condition"><span class="badge buy">買</span> 価格がSARの点（ドット）を上に突き抜けた時</div>
+              <div class="condition"><span class="badge sell">売</span> 価格がSARの点を下に突き抜けた時</div>
+            </div>
+            <div class="strategy-card">
+              <h4>DMI（方向性指数）</h4>
+              <div class="condition"><span class="badge buy">買</span> +DIが-DIを上回り、かつADXが基準値（トレンドの強さ）を超えた時</div>
+              <div class="condition"><span class="badge sell">売</span> +DIが-DIを下回った時、または利確・損切り</div>
+            </div>
+            <div class="strategy-card">
+              <h4>ドンチャンチャネル</h4>
+              <div class="condition"><span class="badge buy">買</span> 過去N日間の最高値を更新した時（高値ブレイクアウト）</div>
+              <div class="condition"><span class="badge sell">売</span> 過去N日間の最安値を更新した時、または利確・損切り</div>
+            </div>
+            <div class="strategy-card">
+              <h4>前日高値ブレイクアウト</h4>
+              <div class="condition"><span class="badge buy">買</span> 終値（またはザラ場）で前日の最高値を超えた時</div>
+              <div class="condition"><span class="badge sell">売</span> 目標利益到達、または前日の最安値を割った時</div>
+            </div>
+          </div>
+
+          <h3 class="strategy-name">オシレーター・逆張り系</h3>
+          <div class="strategy-grid">
+            <div class="strategy-card">
+              <h4>RSI（相対力指数）</h4>
+              <div class="condition"><span class="badge buy">買</span> 相場が売られ過ぎ（例: 30以下）から回復した時</div>
+              <div class="condition"><span class="badge sell">売</span> 相場が買われ過ぎ（例: 70以上）から下落した時</div>
+            </div>
+            <div class="strategy-card">
+              <h4>ストキャスティクス</h4>
+              <div class="condition"><span class="badge buy">買</span> %Kが%Dを売られ過ぎ圏内で下から上に抜けた時</div>
+              <div class="condition"><span class="badge sell">売</span> %Kが%Dを買われ過ぎ圏内で上から下に抜けた時</div>
+            </div>
+            <div class="strategy-card">
+              <h4>RCI（順位相関指数）</h4>
+              <div class="condition"><span class="badge buy">買</span> 下落トレンドが底を打ち、RCI値が基準（例: -80）を上回った時</div>
+              <div class="condition"><span class="badge sell">売</span> RCI値が上限（例: +80）を下回った時</div>
+            </div>
+            <div class="strategy-card">
+              <h4>サイコロジカルライン</h4>
+              <div class="condition"><span class="badge buy">買</span> 過去N日間のうち上昇した日数が一定割合（例: 25%）以下の売られ過ぎの時</div>
+              <div class="condition"><span class="badge sell">売</span> 過去N日間のうち上昇した日数が一定割合（例: 75%）以上の買われ過ぎの時</div>
+            </div>
+          </div>
+
+          <h3 class="strategy-name">ボラティリティ・平均回帰系</h3>
+          <div class="strategy-grid">
+            <div class="strategy-card">
+              <h4>ボリンジャーバンド</h4>
+              <div class="condition"><span class="badge buy">買</span> 価格が下のバンド（-2σ）付近まで売られた時（逆張り）</div>
+              <div class="condition"><span class="badge sell">売</span> 価格が上のバンド（+2σ）付近まで買われた時</div>
+            </div>
+            <div class="strategy-card">
+              <h4>移動平均乖離率</h4>
+              <div class="condition"><span class="badge buy">買</span> 価格が移動平均から大きくマイナスに乖離し、反発し始めた時</div>
+              <div class="condition"><span class="badge sell">売</span> プラス乖離から反落した時、または乖離がゼロ（移動平均）に戻った時</div>
+            </div>
+            <div class="strategy-card">
+              <h4>標準偏差ブレイクアウト</h4>
+              <div class="condition"><span class="badge buy">買</span> 価格変動（標準偏差）が急速に拡大し、かつ価格が上昇している時</div>
+              <div class="condition"><span class="badge sell">売</span> ボラティリティが一定以下に収束、または利確・損切り</div>
+            </div>
+          </div>
+
+          <h3 class="strategy-name">ローソク足パターン系</h3>
+          <div class="strategy-grid">
+            <div class="strategy-card">
+              <h4>ハンマー / 逆ハンマー</h4>
+              <div class="condition"><span class="badge buy">買</span> 実体が小さく下ヒゲが長い「ハンマー」が出現し、相場の底打ちを示唆した時</div>
+              <div class="condition"><span class="badge sell">売</span> 利確・損切り</div>
+            </div>
+            <div class="strategy-card">
+              <h4>包み足（エンゴルフィング）</h4>
+              <div class="condition"><span class="badge buy">買</span> 前日の陰線を完全に包み込むような「大陽線」が出現した時（強気の反転）</div>
+              <div class="condition"><span class="badge sell">売</span> 前日の陽線を包み込む「大陰線」が出現した時（弱気の反転）</div>
+            </div>
+            <div class="strategy-card">
+              <h4>赤三兵 / 黒三兵</h4>
+              <div class="condition"><span class="badge buy">買</span> 陽線が3日連続で右肩上がりに出現（赤三兵）し、強い上昇トレンドを示唆した時</div>
+              <div class="condition"><span class="badge sell">売</span> 陰線が3日連続で右肩下がりに出現（黒三兵）した時</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

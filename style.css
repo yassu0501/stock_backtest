@@ -1545,3 +1545,218 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .regime-stat-value.negative {
   color: #ef4444 !important;
 }
+
+/* ========================================= */
+/* トレード売却統計・理由・ハイライト (Prompt 4) */
+/* ========================================= */
+.exit-statistics-panel {
+  margin-bottom: 20px;
+}
+.exit-stats-title {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  font-family: var(--font-mono);
+}
+.exit-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+.exit-stat-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+.exit-stat-reason {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--accent);
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 6px;
+}
+.exit-stat-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+.exit-stat-details span.win { color: var(--green); }
+.exit-stat-details span.lose { color: var(--red); }
+
+/* トレード履歴行ハイライト */
+.trade-win td {
+  background-color: rgba(0, 242, 173, 0.03);
+}
+.trade-lose td {
+  background-color: rgba(255, 77, 77, 0.03);
+}
+
+/* Exit Reason Tag */
+span.exit-reason {
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-family: var(--font-jp);
+  background: rgba(255, 255, 255, 0.05);
+  display: inline-block;
+}
+span.exit-reason.win {
+  color: var(--green);
+  background: rgba(0, 242, 173, 0.1);
+  border: 1px solid rgba(0, 242, 173, 0.2);
+}
+span.exit-reason.lose {
+  color: var(--red);
+  background: rgba(255, 77, 77, 0.1);
+  border: 1px solid rgba(255, 77, 77, 0.2);
+}
+span.exit-reason.ongoing {
+  color: var(--warn);
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.2);
+}
+
+/* ========================================= */
+/* ヘルプ・解説ページ (Prompt 6 / UI Update) */
+/* ========================================= */
+
+.header-help-btn {
+  margin-left: auto;
+  padding: 8px 16px;
+  background: rgba(0, 242, 173, 0.1);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  text-decoration: none;
+  font-weight: 700;
+  transition: all 0.2s ease;
+}
+.header-help-btn:hover {
+  background: var(--accent);
+  color: var(--bg);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.help-page .header-inner {
+  justify-content: flex-start;
+}
+
+.help-content {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px 0;
+}
+
+.help-text {
+  font-size: 0.9rem;
+  line-height: 1.8;
+  color: #e2e8f0;
+}
+.help-text p {
+  margin-bottom: 16px;
+}
+.help-text ol, .help-text ul {
+  margin-bottom: 20px;
+  padding-left: 24px;
+}
+.help-text li {
+  margin-bottom: 8px;
+}
+.help-text strong {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.help-text table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+}
+.help-text th {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 12px;
+  text-align: left;
+  font-size: 0.85rem;
+  color: var(--accent);
+}
+.help-text td {
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.strategy-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-top: 24px;
+  margin-bottom: 12px;
+  border-left: 4px solid var(--accent);
+  padding-left: 12px;
+}
+
+/* ヘルプページ：戦略カード（グリッド） */
+.strategy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.strategy-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  transition: transform 0.2s, background 0.2s;
+}
+.strategy-card:hover {
+  background: rgba(255, 255, 255, 0.04);
+  transform: translateY(-2px);
+  border-color: rgba(255,255,255,0.1);
+}
+.strategy-card h4 {
+  font-size: 0.95rem;
+  color: var(--text);
+  margin-bottom: 12px;
+  font-weight: 700;
+  border-bottom: 1px dashed var(--border);
+  padding-bottom: 8px;
+}
+.strategy-card .condition {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.strategy-card .condition:last-child {
+  margin-bottom: 0;
+}
+span.badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+span.badge.buy {
+  color: var(--green);
+  background: rgba(0, 242, 173, 0.1);
+  border: 1px solid rgba(0, 242, 173, 0.3);
+}
+span.badge.sell {
+  color: var(--red);
+  background: rgba(255, 77, 77, 0.1);
+  border: 1px solid rgba(255, 77, 77, 0.3);
+}

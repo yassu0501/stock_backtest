@@ -1,4 +1,5 @@
 // app.js — バックテストエンジン + チャート描画
+import InstitutionalAnalyzer from './institutional-analyzer.js';
 
 const API_BASE = "";
 const $ = (id) => document.getElementById(id);
@@ -114,7 +115,7 @@ window.toggleInvestmentFields = () => {
 // ---- DOM参照 ----
 const tickerEl = document.getElementById("ticker");
 const periodEl = document.getElementById("period");
-const strategyEl = document.getElementById("strategy");
+const strategyEl = document.getElementById("strategy-select");
 const shortMaEl = document.getElementById("short-ma");
 const longMaEl = document.getElementById("long-ma");
 const rsiPeriodEl = document.getElementById("rsi-period");
@@ -298,6 +299,33 @@ const STRATEGY_META = {
     ],
     note: '前日の高値を超える「勢い」を捉える短期決戦型。',
   },
+  volumeBreakdown: {
+    name: '高値更新+出来高爆発',
+    type: '機関トラッキング',
+    periods: [
+      { label: '5〜10日', level: 'good', mark: '○' },
+      { label: '10〜20日', level: 'best', mark: '◎' },
+    ],
+    note: '機関の仕込みが完了し、売り手が枯渇したタイミングを狙う。',
+  },
+  vwap: {
+    name: 'VWAP トレンド追認',
+    type: '機関トラッキング',
+    periods: [
+      { label: '1〜2週間', level: 'good', mark: '○' },
+      { label: '2週間〜1ヶ月', level: 'best', mark: '◎' },
+    ],
+    note: '機関の平均価格（VWAP）をベースにした王道のトレンドフォロー。',
+  },
+  volumeDecay: {
+    name: '出来高減衰トレンド追認',
+    type: '機関トラッキング',
+    periods: [
+      { label: '3〜7日', level: 'good', mark: '○' },
+      { label: '7〜15日', level: 'best', mark: '◎' },
+    ],
+    note: '上昇トレンド中の「出来高のない押し目」をピンポイントで狙う。',
+  },
 };
 
 // ---- 全戦略リスト（ランキング実行用） ----
@@ -318,10 +346,13 @@ const ALL_STRATEGIES = [
   { id: 'hammer',    name: 'ハンマー / 逆ハンマー' },
   { id: 'engulf',    name: '包み足' },
   { id: 'three',     name: '赤三兵 / 黒三兵' },
+  { id: 'volumeBreakdown', name: '高値更新+出来高爆発' },
+  { id: 'vwap',            name: 'VWAP トレンド追認' },
+  { id: 'volumeDecay',     name: '出来高減衰トレンド追認' },
 ];
 
 function updateStrategyHint() {
-  const strat = $('strategy').value;
+  const strat = $('strategy-select').value;
   const meta  = STRATEGY_META[strat];
   const hint  = $('strategyHint');
 
@@ -500,7 +531,7 @@ runRankingBtn.addEventListener('click', async () => {
 // バックテストエンジン（共通シミュレーター）
 // ノイズエンジン対応: noiseEngine引数でスリッページ等を適用
 // ========================================
-function simulate(data, sigs, noiseEngine = null) {
+function simulate(data, sigs, noiseEngine = null, dynamicExit = null) {
   const capEl = document.querySelector('[data-type="cap"]') || $('cap-v3');
   const cap   = capEl ? parseFloat(capEl.value) : 1_000_000;
   const fee   = (+$('fee').value || 0) / 100;
@@ -524,13 +555,25 @@ function simulate(data, sigs, noiseEngine = null) {
     // ポジション保有中: 損切り・利確を終値ベースで判定
     if (pos) {
       const chg = (p - pos.price) / pos.price * 100;
+      
+      // 1. 設定による損切り・利確を優先
       if (slPct > 0 && chg <= -slPct) {
         sig = 'sell';
-        sigs[i] = 'sell'; // チャート表示用に書き込む
-      }
-      if (tpPct > 0 && chg >= tpPct) {
+        sigs[i] = 'sell';
+        pos.exitReason = `ロスカット (-${slPct}%)`;
+      } else if (tpPct > 0 && chg >= tpPct) {
         sig = 'sell';
-        sigs[i] = 'sell'; // チャート表示用に書き込む
+        sigs[i] = 'sell';
+        pos.exitReason = `利確 (+${tpPct}%)`;
+      } 
+      // 2. 設定にかかっていない場合のみ動的出口判定（機関投資家戦略用）
+      else if (dynamicExit) {
+        const dExit = dynamicExit(pos.price, i);
+        if (dExit.action !== 'HOLD') {
+          sig = 'sell';
+          sigs[i] = 'sell';
+          pos.exitReason = dExit.reason;
+        }
       }
     }
 
@@ -606,6 +649,7 @@ function simulate(data, sigs, noiseEngine = null) {
         holdDays: Math.round(
           (new Date(nextBar.date) - new Date(pos.date)) / 86400000
         ),
+        exitReason: pos.exitReason || "通常決済",
       });
       cash += proceeds;
       pos = null;
@@ -895,24 +939,59 @@ function runBacktest(data, overrideStrategy = null, noiseMode = 'off') {
   const strategy = overrideStrategy || strategyEl.value;
   let res;
 
-  switch (strategy) {
-    case 'ma_cross':  res = signalMA(data); break;
-    case 'rsi':       res = signalRSI(data); break;
-    case 'bb':        res = signalBB(data); break;
-    case 'macd':      res = signalMACD(data); break;
-    case 'donchian':  res = signalDonchian(data); break;
-    case 'stoch':     res = signalStoch(data); break;
-    case 'psar':      res = signalPSAR(data); break;
-    case 'prev_high': res = signalPrevHigh(data); break;
-    case 'rci':       res = signalRCI(data); break;
-    case 'ma_dev':    res = signalMADev(data); break;
-    case 'dmi':       res = signalDMI(data); break;
-    case 'psycho':    res = signalPsycho(data); break;
-    case 'std_break': res = signalStdBreak(data); break;
-    case 'hammer':    res = signalHammer(data); break;
-    case 'engulf':    res = signalEngulf(data); break;
-    case 'three':     res = signalThreeSoldiers(data); break;
-    default:          res = signalBB(data);
+  const institutionalStrategies = ['volumeBreakdown', 'vwap', 'volumeDecay'];
+  const isInstitutional = institutionalStrategies.includes(strategy);
+  let analyzer = null;
+
+  if (isInstitutional) {
+    analyzer = new InstitutionalAnalyzer({
+      closes: data.map(d => d.close),
+      highs: data.map(d => d.high),
+      lows: data.map(d => d.low),
+      volumes: data.map(d => d.volume),
+      dates: data.map(d => d.date)
+    });
+
+    const sigs = data.map((_, i) => {
+      let result;
+      if (strategy === 'volumeBreakdown') result = analyzer.detectVolumeBreakdownSignal(i);
+      else if (strategy === 'vwap') result = analyzer.detectVWAPSignal(i);
+      else if (strategy === 'volumeDecay') result = analyzer.detectVolumeDecaySignal(i);
+      
+      return result.signal === 'BUY' ? 'buy' : (result.signal === 'SELL' ? 'sell' : null);
+    });
+    res = { sigs, lines: [] };
+    // 機関トラッキング戦略用のチャート表示追加
+    if (strategy === 'vwap') {
+      res.lines.push({ label: 'VWAP', data: analyzer.getVWAP(), color: '#FFA500', isVWAP: true });
+      res.lines.push({ label: 'VWAP Cross', data: analyzer.getVWAPCrossPoints(), color: '#FFA500', isVWAPCross: true });
+    } else if (strategy === 'volumeDecay') {
+      res.lines.push({ label: '出来高MA20', data: analyzer.getVolumeMA(20), color: '#3498DB', isVolumeMA: true });
+      res.lines.push({ label: '出来高減衰', data: analyzer.getVolumeDecayPoints(), isVolumeDecay: true });
+    } else if (strategy === 'volumeBreakdown') {
+      res.lines.push({ label: '高値更新(25d)', data: analyzer.getHighestHigh(25), color: '#2ECC71', isHH: true });
+      res.lines.push({ label: '出来高爆発', data: analyzer.getVolumeBreakdownPoints(), color: '#E74C3C', isVolumeBreakdown: true });
+    }
+  } else {
+    switch (strategy) {
+      case 'ma_cross':  res = signalMA(data); break;
+      case 'rsi':       res = signalRSI(data); break;
+      case 'bb':        res = signalBB(data); break;
+      case 'macd':      res = signalMACD(data); break;
+      case 'donchian':  res = signalDonchian(data); break;
+      case 'stoch':     res = signalStoch(data); break;
+      case 'psar':      res = signalPSAR(data); break;
+      case 'prev_high': res = signalPrevHigh(data); break;
+      case 'rci':       res = signalRCI(data); break;
+      case 'ma_dev':    res = signalMADev(data); break;
+      case 'dmi':       res = signalDMI(data); break;
+      case 'psycho':    res = signalPsycho(data); break;
+      case 'std_break': res = signalStdBreak(data); break;
+      case 'hammer':    res = signalHammer(data); break;
+      case 'engulf':    res = signalEngulf(data); break;
+      case 'three':     res = signalThreeSoldiers(data); break;
+      default:          res = signalBB(data);
+    }
   }
 
   // ノイズエンジンを生成（OFF時はnull）
@@ -922,7 +1001,13 @@ function runBacktest(data, overrideStrategy = null, noiseMode = 'off') {
 
   // ノイズ適用時はシグナル配列をコピーして使用（元の配列を破壊しない）
   const sigsForSim = noiseEngine ? [...res.sigs] : res.sigs;
-  const result = simulate(data, sigsForSim, noiseEngine);
+  
+  // 動的出口判定関数の作成
+  const dynamicExit = isInstitutional ? (entryPrice, currentIndex) => {
+    return analyzer.detectExitSignal(entryPrice, strategy, currentIndex);
+  } : null;
+
+  const result = simulate(data, sigsForSim, noiseEngine, dynamicExit);
 
   // 相場環境判定 & 環境別パフォーマンス集計
   const closes = data.map(d => d.close);
@@ -1374,17 +1459,36 @@ class MultiStrategyMonitor {
     const grid = $('strategyCardsGrid');
     grid.innerHTML = '';
 
+    const formatVal = (label, val) => {
+      if (typeof val !== 'number') return '--';
+      // 出来高MAなどの巨大な数値を万単位に
+      if (label.includes('出来高MA') || label.includes('Volume')) {
+        if (val >= 10000) return (val / 10000).toFixed(1) + '万';
+      }
+      return val.toFixed(1);
+    };
+
     for (const [id, res] of Object.entries(results)) {
       const card = document.createElement('div');
       card.className = `strategy-card`;
       
+      const strategyName = document.querySelector(`#strategy option[value="${id}"]`)?.textContent || id;
+
       // 指標テキストの生成
-      const indText = res.indicators.map(ind => {
+      let indText = res.indicators.map(ind => {
         const val = ind.data[ind.data.length - 1];
-        return `${ind.label}: ${typeof val === 'number' ? val.toFixed(1) : '--'}`;
+        return `${ind.label}: ${formatVal(ind.label, val)}`;
       }).join('<br>');
 
-      const strategyName = document.querySelector(`#strategy option[value="${id}"]`)?.textContent || id;
+      // 機関投資家戦略の場合、現在の出来高比率を追加表示
+      if (['volumeBreakdown', 'volumeDecay'].includes(id)) {
+        const volMAInd = res.indicators.find(ind => ind.label.includes('出来高MA') || ind.label.includes('平均'));
+        if (volMAInd) {
+           const avgVol = volMAInd.data[volMAInd.data.length - 1];
+           // 前日終値時点の出来高比率を簡易表示（本来はリアルタイム計算が必要だが、ここではインジケーターから推測）
+           // 監視データbarから取得できる場合はそちらを優先
+        }
+      }
 
       card.innerHTML = `
         <div class="card-title">${strategyName}</div>
@@ -2195,7 +2299,24 @@ function drawPrice(data, sigs, lines) {
     .map((d, i) => sigs[i] === 'sell' ? { x: i, y: d.high * 1.02 } : null)
     .filter(Boolean);
 
+  const volumeDecayLine = (lines || []).find(l => l.isVolumeDecay);
+  const volumeDecayFlags = volumeDecayLine ? volumeDecayLine.data : [];
+
   const datasets = [
+    {
+      label: '出来高',
+      type: 'bar',
+      data: data.map((d, i) => ({ x: i, y: d.volume })),
+      backgroundColor: data.map((d, i) => {
+        if (volumeDecayFlags[i]) {
+          return 'rgba(255, 200, 200, 0.3)'; // 出来高減衰のハイライト
+        }
+        const isUp = d.close >= d.open;
+        return isUp ? 'rgba(0, 230, 118, 0.15)' : 'rgba(255, 61, 87, 0.15)';
+      }),
+      yAxisID: 'yVolume',
+      order: 3,
+    },
     {
       label: '株価',
       type: 'candlestick',
@@ -2210,6 +2331,7 @@ function drawPrice(data, sigs, lines) {
         down: '#ff3d57',
         unchanged: '#888',
       },
+      order: 2,
     },
     {
       label: '▲買',
@@ -2219,6 +2341,7 @@ function drawPrice(data, sigs, lines) {
       borderColor: '#00e676',
       pointRadius: 7,
       pointStyle: 'triangle',
+      order: 1,
     },
     {
       label: '▼売',
@@ -2229,18 +2352,51 @@ function drawPrice(data, sigs, lines) {
       pointRadius: 7,
       pointStyle: 'triangle',
       rotation: 180,
+      order: 1,
     },
-    // インジケーター線（MA・BB等）
-    ...(lines || []).map(l => ({
-      label: l.label,
-      type: 'line',
-      data: l.data.map((v, i) => ({ x: i, y: v })),
-      borderColor: l.color,
-      borderWidth: 1.3,
-      pointRadius: 0,
-      tension: 0,
-      fill: false,
-    })),
+    // インジケーター線（MA・BB等）やマーク
+    ...(lines || []).filter(l => !l.isVolumeDecay).map(l => {
+      if (l.isVWAPCross) {
+        return {
+          label: l.label,
+          type: 'scatter',
+          data: l.data.map((v, i) => v !== null ? { x: i, y: v } : null).filter(Boolean),
+          backgroundColor: 'rgba(255, 165, 0, 0.4)', // オレンジ背景を半透明に
+          borderColor: 'rgba(255, 165, 0, 0.8)',     // ふちの色も少し薄く
+          pointStyle: 'rectRot',
+          pointRadius: 4,
+          yAxisID: 'y',
+          order: 0,
+        };
+      }
+      if (l.isVolumeBreakdown) {
+         return {
+          label: l.label,
+          type: 'scatter',
+          data: l.data.map((v, i) => v !== null ? { x: i, y: v } : null).filter(Boolean),
+          backgroundColor: l.color,
+          borderColor: l.color,
+          pointStyle: 'triangle',
+          pointRadius: 6,
+          yAxisID: 'y',
+          order: 0,
+         };
+      }
+      const isVol = l.isVolumeMA;
+      return {
+        label: l.label,
+        type: 'line',
+        data: l.data.map((v, i) => ({ x: i, y: v })),
+        borderColor: l.color,
+        borderWidth: l.isVWAP ? 2 : 1.3,
+        borderDash: l.isVolumeMA ? [5, 5] : (l.isHH ? [2, 2] : []),
+        pointRadius: 0,
+        tension: 0,
+        fill: false,
+        yAxisID: isVol ? 'yVolume' : 'y',
+        order: isVol ? 2 : 1,
+      };
+    }),
   ];
 
   chartP = new Chart($('cPrice').getContext('2d'), {
@@ -2301,6 +2457,15 @@ function drawPrice(data, sigs, lines) {
           },
           grid: { color: 'rgba(26,40,64,.5)' },
           title: { display: true, text: '株価 (円)', color: '#2e4a68', font: { size: 9 } },
+        },
+        yVolume: {
+          type: 'linear',
+          display: true,
+          position: 'right',
+          grid: { display: false },
+          min: 0,
+          suggestedMax: Math.max(...data.map(d => d.volume)) * 4,
+          ticks: { display: false },
         },
       },
     },
@@ -2381,17 +2546,21 @@ function chartOptions(yLabel) {
   };
 }
 
+// ---- テーブル・UIレンダリング ----
 function renderTradeTable(trades) {
   const tbody = document.querySelector("#trade-table tbody");
   tbody.innerHTML = "";
   if (trades.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted)">シグナルが発生しませんでした</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted)">シグナルが発生しませんでした</td></tr>';
     return;
   }
   trades.forEach((t, i) => {
     const win = t.pnl > 0;
+    const isOngoing = t.isOpen;
+    const rowClass = isOngoing ? 'open-position' : (win ? 'trade-win' : 'trade-lose');
     const row = document.createElement("tr");
-    if (t.isOpen) row.classList.add("open-position");
+    
+    row.classList.add(rowClass);
     row.innerHTML = `
       <td>${i + 1}</td>
       <td>${t.buyDate}</td>
@@ -2399,11 +2568,56 @@ function renderTradeTable(trades) {
       <td>${t.sellDate}</td>
       <td>${t.sellPrice.toLocaleString()}</td>
       <td>${t.holdDays}日</td>
-      <td class="${win ? "win" : "lose"}">${win ? "+" : ""}${t.pnl.toLocaleString()}</td>
+      <td class="${win ? "win" : "lose"}">${win ? "+" : ""}${Math.round(t.pnl).toLocaleString()}</td>
       <td class="${win ? "win" : "lose"}">${win ? "+" : ""}${t.pnlPct.toFixed(2)}%</td>
+      <td><span class="exit-reason ${isOngoing ? 'ongoing' : (win ? 'win' : 'lose')}">${t.exitReason || (isOngoing ? '保有中' : 'シグナル反転')}</span></td>
     `;
     tbody.appendChild(row);
   });
+}
+
+function renderExitStats(trades) {
+  const container = document.getElementById('exit-statistics');
+  if (!container) return;
+
+  // 集計
+  const stats = {};
+  trades.forEach(t => {
+    if (t.isOpen) return;
+    const reason = t.exitReason || 'シグナル反転';
+    if (!stats[reason]) stats[reason] = { count: 0, wins: 0, totalHold: 0, totalPnlPct: 0 };
+    stats[reason].count++;
+    stats[reason].totalHold += t.holdDays;
+    stats[reason].totalPnlPct += t.pnlPct;
+    if (t.pnl > 0) stats[reason].wins++;
+  });
+
+  if (Object.keys(stats).length === 0) {
+    container.classList.add('hidden');
+    return;
+  }
+
+  let html = '<h3 class="exit-stats-title">売却理由の統計</h3><div class="exit-stats-grid">';
+  for (const [reason, s] of Object.entries(stats)) {
+    const winRate = ((s.wins / s.count) * 100).toFixed(1);
+    const avgHold = (s.totalHold / s.count).toFixed(1);
+    const avgPnl = (s.totalPnlPct / s.count).toFixed(2);
+    const isWin = s.wins > s.count / 2;
+    html += `
+      <div class="exit-stat-card">
+        <div class="exit-stat-reason">${reason}</div>
+        <div class="exit-stat-details">
+          <span>回数: ${s.count}回</span>
+          <span class="${isWin ? 'win' : 'lose'}">勝率: ${winRate}%</span>
+          <span>保有: ${avgHold}日</span>
+          <span class="${avgPnl >= 0 ? 'win' : 'lose'}">平均損益: ${avgPnl >= 0 ? '+' : ''}${avgPnl}%</span>
+        </div>
+      </div>
+    `;
+  }
+  html += '</div>';
+  container.innerHTML = html;
+  container.classList.remove('hidden');
 }
 
 // ---- UI helpers ----
@@ -2576,7 +2790,7 @@ const FREQ_PRESETS = {
   }
 };
 
-function setFreqMode(mode) {
+window.setFreqMode = (mode) => {
   // ボタンのスタイル切り替え
   $('btn-normal').className = 'freq-btn' + (mode === 'normal' ? ' active-normal' : '');
   $('btn-more').className   = 'freq-btn' + (mode === 'more'   ? ' active-more'   : '');

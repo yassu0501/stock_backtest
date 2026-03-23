@@ -162,6 +162,7 @@ function periodToTimestamps(period) {
     "1y": now - 60 * 60 * 24 * 365,
     "2y": now - 60 * 60 * 24 * 365 * 2,
     "3y": now - 60 * 60 * 24 * 365 * 3,
+    "5y": now - 60 * 60 * 24 * 365 * 5,
   };
   return { period1: map[period] || map["1y"], period2: now };
 }

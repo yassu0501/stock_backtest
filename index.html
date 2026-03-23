@@ -15,8 +15,11 @@
   <div class="app">
     <header class="header">
       <div class="header-inner">
-        <div class="logo">億り人<span>爆誕装置</span></div>
-        <div class="subtitle">Backtest Engine Pro</div>
+        <div>
+          <div class="logo">億り人<span>爆誕装置</span></div>
+          <div class="subtitle">Backtest Engine Pro</div>
+        </div>
+        <a href="help.html" class="header-help-btn" target="_blank">このサイトの使い方</a>
       </div>
     </header>
 
@@ -116,13 +119,19 @@
             <option value="1y" selected>1年</option>
             <option value="2y">2年</option>
             <option value="3y">3年</option>
+            <option value="5y">5年</option>
           </select>
         </div>
         <div class="config-item wide">
-          <label>戦略</label>
-          <select id="strategy">
+          <label for="strategy-select">戦略</label>
+          <select id="strategy-select">
+            <optgroup label="機関投資家トラッキング">
+              <option value="volumeBreakdown" title="機関の仕込み完了後の反発">高値更新+出来高爆発</option>
+              <option value="vwap" title="機関の平均建値（VWAP）をベースにしたトレンド追従">VWAP トレンド追認</option>
+              <option value="volumeDecay" title="出来高の枯渇から反落・反発を捉える">出来高減衰トレンド追認</option>
+            </optgroup>
             <optgroup label="トレンド・ブレイクアウト">
-              <option value="ma_cross">移動平均クロス</option>
+              <option value="ma_cross" selected>移動平均クロス</option>
               <option value="macd">MACD</option>
               <option value="psar">パラボリックSAR</option>
               <option value="dmi">DMI（方向性指数）</option>
@@ -147,6 +156,7 @@
             </optgroup>
           </select>
         </div>
+
         <div class="config-item" id="ma-params">
           <label>短期MA / 長期MA</label>
           <div class="input-row">
@@ -349,34 +359,30 @@
             <span>%</span>
           </div>
         </div>
-        <div class="config-item">
-          <label>損切りライン</label>
+        <div class="config-item" style="min-width: 140px;">
+          <label>損切 / 利確</label>
           <div class="input-row">
-            <input id="sl-pct" type="number" value="5" min="0" max="30" step="0.5"/>
-            <span>% 下落で売り（0=無効）</span>
+            <input id="sl-pct" type="number" value="5" min="0" max="30" step="0.5" style="max-width: 40px; text-align: center;" />
+            <span style="font-size: 0.75rem;">%止 /</span>
+            <input id="tp-pct" type="number" value="0" min="0" max="50" step="0.5" style="max-width: 40px; text-align: center;" />
+            <span style="font-size: 0.75rem;">%利</span>
           </div>
         </div>
-        <div class="config-item">
-          <label>利確ライン</label>
-          <div class="input-row">
-            <input id="tp-pct" type="number" value="0" min="0" max="50" step="0.5"/>
-            <span>% 上昇で売り（0=無効）</span>
-          </div>
-        </div>
-        <div class="config-item">
-          <label>🎲 ノイズモード</label>
-          <select id="noise-mode">
-            <option value="off" selected>OFF（通常）</option>
-            <option value="low">Low（スリッページのみ）</option>
-            <option value="medium">Medium（スリッページ＋ギャップ）</option>
-            <option value="high">High（全ノイズ適用）</option>
+        <div class="config-item" style="min-width: 100px;">
+          <label>🎲 ノイズ</label>
+          <select id="noise-mode" style="padding: 6px 4px;">
+            <option value="off" selected>OFF</option>
+            <option value="low">Low</option>
+            <option value="medium">Mid</option>
+            <option value="high">High</option>
           </select>
         </div>
-        <div class="config-item">
-          <div class="freq-label">取引回数モード</div>
-          <div class="freq-btns">
-            <button class="freq-btn active-normal" id="btn-normal" onclick="setFreqMode('normal')">通常</button>
-            <button class="freq-btn" id="btn-more" onclick="setFreqMode('more')">取引回数増</button>
+
+        <div class="config-item" style="min-width: 100px;">
+          <label>取引回数</label>
+          <div class="freq-btns" style="margin-top:0;">
+            <button class="freq-btn active-normal" id="btn-normal" onclick="setFreqMode('normal')" style="padding: 6px 2px;">通常</button>
+            <button class="freq-btn" id="btn-more" onclick="setFreqMode('more')" style="padding: 6px 2px;">多</button>
           </div>
         </div>
         <div class="config-item config-action">
@@ -499,7 +505,13 @@
 
       <!-- トレード履歴 -->
       <section class="panel table-panel">
-        <h2 class="panel-title">トレード履歴</h2>
+        <h2 class="panel-title">シグナル統計 & トレード履歴</h2>
+        
+        <!-- 追加: 売却理由の統計パネル -->
+        <div id="exit-statistics" class="exit-statistics-panel hidden">
+          <!-- JSで動的に生成 -->
+        </div>
+
         <div class="table-wrapper">
           <table id="trade-table">
             <thead>
@@ -512,6 +524,7 @@
                 <th>保有日数</th>
                 <th>損益（円）</th>
                 <th>損益（%）</th>
+                <th>売却理由</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -523,6 +536,6 @@
     </div><!-- /main-layout -->
   </div><!-- /app -->
 
-  <script src="app.js?v=2"></script>
+  <script type="module" src="app.js?v=2"></script>
 </body>
 </html>
