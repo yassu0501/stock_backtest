@@ -334,6 +334,77 @@ input[type=number] {
   height: 320px;
 }
 
+/* スライダーコントロール（ナビゲーター形式） */
+.chart-controls {
+  margin-top: 24px;
+  padding: 0 10px;
+}
+.range-slider-wrapper {
+  position: relative;
+  height: 44px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  pointer-events: auto;
+}
+.range-mini-chart {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100% !important;
+  height: 100% !important;
+  pointer-events: none;
+  opacity: 0.6;
+}
+.range-track-bg {
+  display: none; /* 背景はミニチャートが担うので非表示 */
+}
+.range-track-fill {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: rgba(0, 242, 173, 0.12); /* 選択範囲のハイライト */
+  border-left: 2px solid var(--accent);
+  border-right: 2px solid var(--accent);
+  cursor: grab;
+  z-index: 10;
+}
+.range-track-fill:active {
+  cursor: grabbing;
+}
+/* カスタムハンドル（div形式） */
+.range-handle {
+  position: absolute;
+  top: 0;
+  width: 14px;
+  height: 100%;
+  background: #cbd5e1;
+  border: 1.5px solid #64748b;
+  border-radius: 4px;
+  cursor: ew-resize;
+  z-index: 20; /* ハンドルが一番上 */
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  background-image: linear-gradient(90deg, 
+    transparent 3px, #64748b 3px, #64748b 4px, 
+    transparent 4px, transparent 6px, 
+    #64748b 6px, #64748b 7px, transparent 7px);
+  transform: translateX(-50%); /* 中央揃え */
+}
+.range-handle:hover {
+  background: #f8fafc;
+  border-color: #475569;
+}
+.range-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 14px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+}
+
 /* テーブル */
 .table-wrapper {
   overflow-x: auto;

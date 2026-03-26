@@ -128,6 +128,11 @@
               <div class="condition"><span class="badge buy">買</span> 終値（またはザラ場）で前日の最高値を超えた時</div>
               <div class="condition"><span class="badge sell">売</span> 目標利益到達、または前日の最安値を割った時</div>
             </div>
+            <div class="strategy-card">
+              <h4>一目均衡表</h4>
+              <div class="condition"><span class="badge buy">買</span> 転換線が基準線を上抜けた時（または価格が雲を上抜けた時 / 設定により変化）</div>
+              <div class="condition"><span class="badge sell">売</span> 転換線が基準線を下抜けた時（または価格が雲を下抜けた時）</div>
+            </div>
           </div>
 
           <h3 class="strategy-name">オシレーター・逆張り系</h3>
@@ -151,6 +156,11 @@
               <h4>サイコロジカルライン</h4>
               <div class="condition"><span class="badge buy">買</span> 過去N日間のうち上昇した日数が一定割合（例: 25%）以下の売られ過ぎの時</div>
               <div class="condition"><span class="badge sell">売</span> 過去N日間のうち上昇した日数が一定割合（例: 75%）以上の買われ過ぎの時</div>
+            </div>
+            <div class="strategy-card">
+              <h4>ギャップ埋め（窓埋め）</h4>
+              <div class="condition"><span class="badge buy">買</span> 前日終値から一定以上（例: 2%）窓を開けて下落して始まった時</div>
+              <div class="condition"><span class="badge sell">売</span> 窓が目標（例: 100%）まで埋まった時、または一定期間（例: 5日）経過後</div>
             </div>
           </div>
 

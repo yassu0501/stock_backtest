@@ -124,16 +124,19 @@ function fetchOnce(ticker, period1, period2) {
 
             if (close === null || close === undefined) return null;
 
-            // 指数の場合など、調整後終値がない場合は通常の終値を使用
-            const adj = (adjclose[i] !== undefined && adjclose[i] !== null) ? adjclose[i] : close;
-            const ratio = (close !== 0) ? adj / close : 1;
+            // 配当等による調整（adjclose）を適用せず、実体価格（Close）をベースにする
+            // これにより、現在の株価の数値と表示がピタリと一致するようになります
+            const o = (open  !== null && open  !== undefined) ? open  : close;
+            const h = (high  !== null && high  !== undefined) ? high  : close;
+            const l = (low   !== null && low   !== undefined) ? low   : close;
+            const c = close;
 
             return {
               date: new Date(ts * 1000).toISOString().split('T')[0],
-              open:   Math.round((open  || close) * ratio * 10) / 10,
-              high:   Math.round((high  || close) * ratio * 10) / 10,
-              low:    Math.round((low   || close) * ratio * 10) / 10,
-              close:  Math.round(adj              * 10) / 10,
+              open:   Math.round(o * 10) / 10,
+              high:   Math.round(h * 10) / 10,
+              low:    Math.round(l * 10) / 10,
+              close:  Math.round(c * 10) / 10,
               volume: ohlcv.volume[i] || 0,
             };
           }).filter(r => r !== null && r.close !== 0);
@@ -168,7 +171,7 @@ function periodToTimestamps(period) {
 }
 
 const server = http.createServer((req, res) => {
-  const parsed = url.parse(req.url, true);
+  const parsed = new URL(req.url, `http://${req.headers.host}`);
 
   // CORS ヘッダー
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -182,8 +185,8 @@ const server = http.createServer((req, res) => {
 
   // --- API: /api/stock ---
   if (parsed.pathname === "/api/stock") {
-    const ticker = parsed.query.ticker || "7203.T";
-    const period = parsed.query.period || "1y";
+    const ticker = parsed.searchParams.get("ticker") || "7203.T";
+    const period = parsed.searchParams.get("period") || "1y";
     const { period1, period2 } = periodToTimestamps(period);
 
     fetchYahooCSV(ticker, period1, period2)
