@@ -1339,24 +1339,21 @@ class MultiStrategyMonitor {
 
   start() {
     const ticker = $('multiMonitorTicker').value.trim();
-    // チェックされた戦略を取得
-    const selected = Array.from(document.querySelectorAll('input[name="m-strat"]:checked')).map(el => el.value);
-
     if (!ticker) { alert('監視する銘柄コードを入力してください'); return; }
-    if (selected.length === 0) { alert('少なくとも1つの戦略を選択してください'); return; }
 
     this.ticker = ticker;
-    this.strategies = selected;
+    this.strategies = ALL_STRATEGIES.map(s => s.id);
     this.isActive = true;
-    
+
     $('btnStartMultiMonitor').textContent = '監視停止';
     $('btnStartMultiMonitor').classList.add('active');
     $('multiMonitorStatusBadge').textContent = '🟢 監視中';
     $('multiMonitorStatusBadge').classList.add('active');
     $('multiMonitorDisplay').classList.remove('hidden');
     $('displayTickerCode').textContent = ticker;
+    $('displayTickerName').textContent = `全${this.strategies.length}戦略を監視中`;
 
-    console.log(`[一括監視開始] 銘柄:${this.ticker}, 戦略数:${this.strategies.length}`);
+    console.log(`[監視開始] 銘柄:${ticker}, 戦略数:${this.strategies.length}`);
     this.resume();
   }
 
@@ -1376,6 +1373,8 @@ class MultiStrategyMonitor {
     $('multiMonitorTicker').value = '';
     $('strategyCardsGrid').innerHTML = '';
     $('signalTimeline').innerHTML = '';
+    const countEl = $('signalTickerCount');
+    if (countEl) countEl.textContent = '0';
     $('consensusBuy').style.width = '0%';
     $('consensusWait').style.width = '100%';
     $('consensusSell').style.width = '0%';
@@ -1400,21 +1399,18 @@ class MultiStrategyMonitor {
     if (!this.isActive || document.hidden) return;
 
     try {
-      console.log(`[一括監視実行] ${this.ticker} 更新中...`);
-      
-      // データ取得
-      const histRes = await fetch(`/api/stock?ticker=${encodeURIComponent(this.ticker)}&period=1y`);
+      console.log(`[監視実行] ${this.ticker} 全戦略チェック中...`);
+
+      const histRes  = await fetch(`/api/stock?ticker=${encodeURIComponent(this.ticker)}&period=1y`);
       const { data: history, ticker } = await histRes.json();
-      const priceRes = await fetch(`/api/stock-price/${encodeURIComponent(this.ticker)}`);
+      const priceRes  = await fetch(`/api/stock-price/${encodeURIComponent(this.ticker)}`);
       const priceData = await priceRes.json();
-      
+
       if (!priceData.success) throw new Error('現在値取得失敗');
       const latestPrice = priceData.data.close;
 
-      // 銘柄名の表示更新（もし取得できれば）
       $('displayTickerName').textContent = ticker || this.ticker;
-      
-      // データのマージ
+
       const latestBar = {
         date: new Date(priceData.data.timestamp).toISOString().split('T')[0],
         open: latestPrice, high: priceData.data.high, low: priceData.data.low, close: latestPrice, volume: 0
@@ -1426,7 +1422,6 @@ class MultiStrategyMonitor {
         combined.push(latestBar);
       }
 
-      // 各戦略の判定
       const results = {};
       const counts = { buy: 0, sell: 0, wait: 0 };
 
@@ -1434,67 +1429,48 @@ class MultiStrategyMonitor {
         try {
           const res = runBacktest(combined, stratId);
           const lastSig = res.signals[res.signals.length - 1];
-          const indicators = res.indicators;
-          
-          results[stratId] = { signal: lastSig || 'wait', indicators };
+          results[stratId] = { signal: lastSig || 'wait', indicators: res.indicators };
           counts[lastSig || 'wait']++;
         } catch (e) {
           console.error(`判定エラー (${stratId}):`, e);
         }
       });
 
-      // UI更新
-      this.updateCards(results, latestPrice);
+      this.updateSignalStrategyList(results, latestPrice);
       this.updateConsensus(counts);
-      this.updateTimeline(counts, latestPrice);
-      
+      this.updateTimeline(counts);
       $('multiLastCheckTime').textContent = `最終確認: ${new Date().toLocaleTimeString('ja-JP')}`;
 
     } catch (err) {
-      console.error('[一括監視エラー]:', err);
+      console.error('[監視エラー]:', err);
     }
   }
 
-  updateCards(results, price) {
+  updateSignalStrategyList(results, price) {
     const grid = $('strategyCardsGrid');
     grid.innerHTML = '';
 
-    const formatVal = (label, val) => {
-      if (typeof val !== 'number') return '--';
-      // 出来高MAなどの巨大な数値を万単位に
-      if (label.includes('出来高MA') || label.includes('Volume')) {
-        if (val >= 10000) return (val / 10000).toFixed(1) + '万';
-      }
-      return val.toFixed(1);
-    };
+    const signalEntries = Object.entries(results).filter(([, r]) => r.signal !== 'wait');
 
-    for (const [id, res] of Object.entries(results)) {
+    const countEl = $('signalTickerCount');
+    if (countEl) countEl.textContent = signalEntries.length;
+
+    if (signalEntries.length === 0) {
+      grid.innerHTML = '<div class="no-signal-msg">現在シグナルが出ている戦略はありません</div>';
+      return;
+    }
+
+    for (const [id, res] of signalEntries) {
       const card = document.createElement('div');
-      card.className = `strategy-card`;
-      
-      const strategyName = document.querySelector(`#strategy option[value="${id}"]`)?.textContent || id;
+      card.className = `strategy-card sig-${res.signal}`;
 
-      // 指標テキストの生成
-      let indText = res.indicators.map(ind => {
-        const val = ind.data[ind.data.length - 1];
-        return `${ind.label}: ${formatVal(ind.label, val)}`;
-      }).join('<br>');
-
-      // 機関投資家戦略の場合、現在の出来高比率を追加表示
-      if (['volumeBreakdown', 'volumeDecay'].includes(id)) {
-        const volMAInd = res.indicators.find(ind => ind.label.includes('出来高MA') || ind.label.includes('平均'));
-        if (volMAInd) {
-           const avgVol = volMAInd.data[volMAInd.data.length - 1];
-           // 前日終値時点の出来高比率を簡易表示（本来はリアルタイム計算が必要だが、ここではインジケーターから推測）
-           // 監視データbarから取得できる場合はそちらを優先
-        }
-      }
+      const strategyName = document.querySelector(`#strategy-select option[value="${id}"]`)?.textContent || id;
 
       card.innerHTML = `
         <div class="card-title">${strategyName}</div>
         <div class="card-main">
           <div class="card-signal ${res.signal}">${res.signal.toUpperCase()}</div>
-          <div class="card-value">${indText}</div>
+          <div class="card-value">¥${price.toLocaleString()}</div>
         </div>
       `;
       grid.appendChild(card);
@@ -1521,14 +1497,13 @@ class MultiStrategyMonitor {
     $('consensusVerdict').textContent = verdict;
   }
 
-  updateTimeline(counts, price) {
+  updateTimeline(counts) {
     if (counts.buy === 0 && counts.sell === 0) return;
 
     const time = new Date().toLocaleTimeString('ja-JP');
     const type = counts.buy > counts.sell ? 'buy' : 'sell';
     const action = type === 'buy' ? 'BUY 信号多数' : 'SELL 信号多数';
-    
-    // タイムラインへの追加
+
     const item = document.createElement('div');
     item.className = `timeline-item ${type}`;
     item.innerHTML = `
@@ -1536,7 +1511,6 @@ class MultiStrategyMonitor {
       <div class="timeline-content">
         <div class="timeline-info">
           <strong>${action}</strong> (B:${counts.buy} / S:${counts.sell})
-          <span class="price">@ ¥${price.toLocaleString()}</span>
         </div>
         <div class="timeline-time">${time}</div>
       </div>
@@ -1576,6 +1550,15 @@ function sma(arr, period) {
   });
 }
 
+// ---- 表示用SMA（ウォームアップ期間も部分平均で埋める） ----
+function smaFull(arr, period) {
+  return arr.map((_, i) => {
+    const start = Math.max(0, i - period + 1);
+    const slice = arr.slice(start, i + 1);
+    return slice.reduce((a, b) => a + b, 0) / slice.length;
+  });
+}
+
 // ---- 戦略: 移動平均クロス ----
 function signalMA(data) {
   const short = parseInt($('short-ma').value);
@@ -1594,8 +1577,8 @@ function signalMA(data) {
   return {
     sigs,
     lines: [
-      { label: `MA${short}`, data: shortMA, color: "#3b82f6" },
-      { label: `MA${long}`, data: longMA, color: "#f59e0b" },
+      { label: `MA${short}`, data: smaFull(closes, short), color: "#3b82f6" },
+      { label: `MA${long}`,  data: smaFull(closes, long),  color: "#f59e0b" },
     ],
   };
 }

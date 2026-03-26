@@ -37,15 +37,10 @@
             <input type="text" id="multiMonitorTicker" placeholder="例: 7203" class="sidebar-input">
           </div>
 
-          <div class="sidebar-group">
-            <label>適用戦略（最大6つ）</label>
-            <div id="monitorStrategyChecklist" class="strategy-checklist scrollable-list">
-              <!-- JSで動的に生成 -->
-            </div>
-          </div>
+          <div id="monitorStrategyChecklist" style="display:none"></div>
 
           <div class="sidebar-actions">
-            <button id="btnStartMultiMonitor" class="btn-primary full-width">🟢 監視開始</button>
+            <button id="btnStartMultiMonitor" class="btn-primary full-width">点灯シグナルを探す</button>
             <button id="btnResetMultiMonitor" class="btn-outline full-width">⊗ リセット</button>
           </div>
         </section>
@@ -71,18 +66,18 @@
             </div>
           </div>
 
-          <!-- 合意度インジケーター -->
-          <div class="consensus-box">
-            <div class="consensus-label">総合シグナル合意度 (Consensus)</div>
-            <div class="consensus-bar-container">
-              <div id="consensusBuy" class="bar buy" style="width: 0%"></div>
-              <div id="consensusWait" class="bar wait" style="width: 100%"></div>
-              <div id="consensusSell" class="bar sell" style="width: 0%"></div>
-            </div>
-            <div class="consensus-verdict" id="consensusVerdict">WAITING...</div>
+          <div style="display:none">
+            <div id="consensusBuy"></div>
+            <div id="consensusWait"></div>
+            <div id="consensusSell"></div>
+            <div id="consensusVerdict"></div>
           </div>
 
-          <!-- 戦略別カードグリッド -->
+          <!-- シグナルあり戦略 -->
+          <div class="signal-ticker-header">
+            <span class="section-title">シグナルあり戦略</span>
+            <span id="signalTickerCount" class="signal-count-badge">0</span>
+          </div>
           <div id="strategyCardsGrid" class="strategy-cards-grid">
             <!-- JSで生成 -->
           </div>
