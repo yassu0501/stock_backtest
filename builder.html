@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>戦略ビルダー | 億り人爆誕装置</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    /* ============================================================
+       ビルダー専用スタイル
+    ============================================================ */
+
+    /* 2カラムレイアウト */
+    .builder-layout {
+      display: flex;
+      gap: 16px;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 16px;
+      align-items: flex-start;
+    }
+
+    .builder-main {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .builder-sidebar {
+      width: 300px;
+      flex-shrink: 0;
+      position: sticky;
+      top: 16px;
+    }
+
+    /* トップバー */
+    .builder-top-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      background: var(--bg-surface, #0c121e);
+      border: 1px solid var(--border, #1a2236);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 16px;
+    }
+
+    .builder-top-bar input,
+    .builder-top-bar select {
+      background: var(--bg, #05080f);
+      border: 1px solid var(--border, #1a2236);
+      color: var(--text, #c8d8f0);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 13px;
+    }
+
+    .builder-top-bar input[type="text"]   { width: 90px; }
+    .builder-top-bar input[type="number"] { width: 100px; }
+
+    /* セクションラベル */
+    .section-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--accent, #00f2ad);
+      margin: 16px 0 8px;
+      letter-spacing: 0.04em;
+    }
+
+    /* ============================================================
+       条件グループ
+    ============================================================ */
+    .condition-group {
+      background: var(--bg-surface, #0c121e);
+      border: 1px solid var(--border, #1a2236);
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 4px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+
+    .condition-group.active-group {
+      border-color: var(--accent, #00f2ad);
+      box-shadow: 0 0 0 1px var(--accent, #00f2ad)44;
+    }
+
+    .group-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+
+    .group-number {
+      font-size: 11px;
+      color: var(--text-dim, #8899bb);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .logic-toggle {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 10px;
+      border-radius: 4px;
+      border: 1px solid currentColor;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .logic-and {
+      color: var(--accent, #00f2ad);
+      background: var(--accent, #00f2ad)11;
+    }
+
+    .logic-or {
+      color: #f59e0b;
+      background: #f59e0b11;
+    }
+
+    .group-desc {
+      font-size: 11px;
+      color: var(--text-dim, #8899bb);
+    }
+
+    .group-actions {
+      margin-left: auto;
+      display: flex;
+      gap: 6px;
+    }
+
+    .conditions-container {
+      min-height: 32px;
+    }
+
+    .empty-cond-msg {
+      font-size: 11px;
+      color: var(--text-dim, #8899bb);
+      padding: 8px 0;
+      font-style: italic;
+    }
+
+    .add-cond-btn {
+      font-size: 12px;
+      color: var(--accent2, #3b82f6);
+      background: transparent;
+      border: 1px dashed var(--accent2, #3b82f6)66;
+      border-radius: 6px;
+      padding: 5px 12px;
+      cursor: pointer;
+      margin-top: 8px;
+      width: 100%;
+      transition: background 0.15s;
+    }
+
+    .add-cond-btn:hover {
+      background: var(--accent2, #3b82f6)11;
+    }
+
+    /* グループ間ロジック */
+    .between-groups {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 4px 0;
+      padding: 0 16px;
+    }
+
+    .between-line {
+      flex: 1;
+      height: 1px;
+      background: var(--border, #1a2236);
+    }
+
+    .group-logic-btn {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 14px;
+      border-radius: 4px;
+      border: 1px solid #f59e0b;
+      color: #f59e0b;
+      background: #f59e0b11;
+      cursor: pointer;
+    }
+
+    /* グループ追加ボタン */
+    .add-group-btn {
+      width: 100%;
+      margin-top: 8px;
+      font-size: 13px;
+      padding: 8px;
+      background: transparent;
+      border: 1px dashed var(--border, #1a2236);
+      color: var(--text-dim, #8899bb);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .add-group-btn:hover {
+      border-color: var(--accent, #00f2ad);
+      color: var(--accent, #00f2ad);
+    }
+
+    /* ============================================================
+       条件行
+    ============================================================ */
+    .condition-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      padding: 6px 8px;
+      border-radius: 6px;
+      background: var(--bg, #05080f);
+      margin-bottom: 4px;
+      font-size: 12px;
+    }
+
+    .cond-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 3px;
+      white-space: nowrap;
+    }
+
+    .cond-trend  { background: #00f2ad22; color: #00f2ad; }
+    .cond-osc    { background: #3b82f622; color: #3b82f6; }
+    .cond-vol    { background: #f59e0b22; color: #f59e0b; }
+    .cond-price  { background: #ec489922; color: #ec4899; }
+    .cond-other  { background: #8899bb22; color: #8899bb; }
+
+    .cond-name {
+      color: var(--text-dim, #8899bb);
+      white-space: nowrap;
+    }
+
+    .cond-params-inline {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+      color: var(--text, #c8d8f0);
+    }
+
+    .cond-params-inline input,
+    .cond-params-inline select {
+      background: var(--bg-surface, #0c121e);
+      border: 1px solid var(--border, #1a2236);
+      color: var(--text, #c8d8f0);
+      border-radius: 4px;
+      padding: 2px 4px;
+      font-size: 12px;
+    }
+
+    .cond-remove {
+      margin-left: auto;
+      background: transparent;
+      border: none;
+      color: #ff4d4d88;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 2px 4px;
+      border-radius: 4px;
+      transition: color 0.15s;
+    }
+
+    .cond-remove:hover { color: #ff4d4d; }
+
+    /* ============================================================
+       決済設定
+    ============================================================ */
+    .exit-settings {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      background: var(--bg-surface, #0c121e);
+      border: 1px solid var(--border, #1a2236);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: var(--text-dim, #8899bb);
+    }
+
+    .exit-settings input {
+      width: 64px;
+      background: var(--bg, #05080f);
+      border: 1px solid var(--border, #1a2236);
+      color: var(--text, #c8d8f0);
+      border-radius: 5px;
+      padding: 4px 6px;
+      font-size: 13px;
+    }
+
+    /* 戦略名・実行バー */
+    .builder-action-bar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-top: 14px;
+    }
+
+    .builder-action-bar input[type="text"] {
+      flex: 1;
+      background: var(--bg-surface, #0c121e);
+      border: 1px solid var(--border, #1a2236);
+      color: var(--text, #c8d8f0);
+      border-radius: 6px;
+      padding: 7px 10px;
+      font-size: 13px;
+    }
+
+    .run-btn {
+      background: linear-gradient(135deg, var(--accent, #00f2ad), #00c98f);
+      color: #05080f;
+      font-weight: 700;
+      font-size: 13px;
+      padding: 8px 20px;
+      border: none;
+      border-radius: 7px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: opacity 0.15s;
+    }
+
+    .run-btn:disabled { opacity: 0.5; cursor: wait; }
+
+    /* ============================================================
+       右サイドバー
+    ============================================================ */
+    .sidebar-panel-builder {
+      background: var(--bg-surface, #0c121e);
+      border: 1px solid var(--border, #1a2236);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .sidebar-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border, #1a2236);
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 9px 0;
+      font-size: 12px;
+      font-weight: 600;
+      background: transparent;
+      border: none;
+      color: var(--text-dim, #8899bb);
+      cursor: pointer;
+      transition: color 0.15s, background 0.15s;
+    }
+
+    .tab-btn.active {
+      color: var(--accent, #00f2ad);
+      background: var(--accent, #00f2ad)0d;
+      border-bottom: 2px solid var(--accent, #00f2ad);
+    }
+
+    .tab-content {
+      padding: 10px;
+      max-height: calc(100vh - 200px);
+      overflow-y: auto;
+    }
+
+    /* インジケーターカテゴリ */
+    .ind-category {
+      margin-bottom: 10px;
+    }
+
+    .ind-category-label {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--text-dim, #8899bb);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 4px;
+      padding: 0 2px;
+    }
+
+    .ind-items {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .ind-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      background: var(--bg, #05080f);
+      transition: background 0.12s;
+    }
+
+    .ind-item:hover {
+      background: var(--accent, #00f2ad)0d;
+    }
+
+    .ind-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 3px;
+      white-space: nowrap;
+      min-width: 32px;
+      text-align: center;
+    }
+
+    .ind-trend { background: #00f2ad22; color: #00f2ad; }
+    .ind-osc   { background: #3b82f622; color: #3b82f6; }
+    .ind-vol   { background: #f59e0b22; color: #f59e0b; }
+    .ind-price { background: #ec489922; color: #ec4899; }
+
+    .ind-name {
+      flex: 1;
+      font-size: 12px;
+      color: var(--text, #c8d8f0);
+    }
+
+    .ind-add-icon {
+      font-size: 14px;
+      color: var(--text-dim, #8899bb);
+    }
+
+    /* 保存済み戦略 */
+    .saved-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+      border-radius: 6px;
+      background: var(--bg, #05080f);
+      margin-bottom: 4px;
+    }
+
+    .saved-item-info { flex: 1; }
+
+    .saved-item-name {
+      font-size: 13px;
+      color: var(--text, #c8d8f0);
+      font-weight: 600;
+    }
+
+    .saved-item-date {
+      font-size: 10px;
+      color: var(--text-dim, #8899bb);
+    }
+
+    .saved-item-actions {
+      display: flex;
+      gap: 4px;
+    }
+
+    /* ============================================================
+       ボタン共通
+    ============================================================ */
+    .btn-sm {
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 4px;
+      border: 1px solid var(--border, #1a2236);
+      background: transparent;
+      color: var(--text-dim, #8899bb);
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+    }
+
+    .btn-sm:hover {
+      background: var(--bg-surface, #0c121e);
+      color: var(--text, #c8d8f0);
+    }
+
+    .btn-danger {
+      border-color: #ff4d4d44;
+      color: #ff4d4d88;
+    }
+
+    .btn-danger:hover {
+      background: #ff4d4d11;
+      color: #ff4d4d;
+    }
+
+    .btn-save {
+      font-size: 13px;
+      padding: 7px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--accent2, #3b82f6);
+      background: transparent;
+      color: var(--accent2, #3b82f6);
+      cursor: pointer;
+      transition: background 0.12s;
+      white-space: nowrap;
+    }
+
+    .btn-save:hover {
+      background: var(--accent2, #3b82f6)11;
+    }
+
+    /* ============================================================
+       結果エリア
+    ============================================================ */
+    .result-section {
+      background: var(--bg-surface, #0c121e);
+      border: 1px solid var(--border, #1a2236);
+      border-radius: 10px;
+      padding: 16px;
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .metric-card {
+      background: var(--bg, #05080f);
+      border: 1px solid var(--border, #1a2236);
+      border-radius: 7px;
+      padding: 10px 12px;
+    }
+
+    .metric-label {
+      font-size: 10px;
+      color: var(--text-dim, #8899bb);
+      margin-bottom: 4px;
+    }
+
+    .metric-value {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text, #c8d8f0);
+    }
+
+    .metric-value.pos { color: var(--green, #00f2ad); }
+    .metric-value.neg { color: var(--red, #ff4d4d); }
+
+    .chart-wrap canvas {
+      border-radius: 6px;
+      background: var(--bg, #05080f);
+    }
+
+    /* トレードテーブル */
+    .trade-tbl {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    .trade-tbl th {
+      background: var(--bg, #05080f);
+      color: var(--text-dim, #8899bb);
+      padding: 6px 8px;
+      text-align: left;
+      font-weight: 600;
+      border-bottom: 1px solid var(--border, #1a2236);
+      white-space: nowrap;
+    }
+
+    .trade-tbl td {
+      padding: 5px 8px;
+      border-bottom: 1px solid #1a223644;
+      color: var(--text, #c8d8f0);
+      white-space: nowrap;
+    }
+
+    .trade-tbl td.num { text-align: right; }
+    .trade-tbl td.pos { color: var(--green, #00f2ad); }
+    .trade-tbl td.neg { color: var(--red, #ff4d4d); }
+
+    .empty-msg {
+      color: var(--text-dim, #8899bb);
+      font-size: 13px;
+      text-align: center;
+      padding: 16px 0;
+    }
+
+    .error-msg {
+      color: var(--red, #ff4d4d);
+      font-size: 13px;
+      padding: 12px;
+      border: 1px solid var(--red, #ff4d4d)44;
+      border-radius: 6px;
+      background: var(--red, #ff4d4d)0a;
+    }
+
+    /* 投資モード */
+    .investment-mode-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-dim, #8899bb);
+    }
+
+    .investment-mode-row select,
+    .investment-mode-row input {
+      background: var(--bg, #05080f);
+      border: 1px solid var(--border, #1a2236);
+      color: var(--text, #c8d8f0);
+      border-radius: 5px;
+      padding: 4px 8px;
+      font-size: 13px;
+    }
+
+    /* ナビ */
+    .builder-nav {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 8px 16px;
+      background: var(--bg-surface, #0c121e);
+      border-bottom: 1px solid var(--border, #1a2236);
+    }
+
+    .builder-nav a {
+      font-size: 13px;
+      color: var(--text-dim, #8899bb);
+      text-decoration: none;
+      padding: 4px 10px;
+      border-radius: 5px;
+      transition: color 0.15s, background 0.15s;
+    }
+
+    .builder-nav a:hover,
+    .builder-nav a.current {
+      color: var(--accent, #00f2ad);
+      background: var(--accent, #00f2ad)11;
+    }
+
+    /* 銘柄チップ */
+    .ticker-chips {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .ticker-chip {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      border: 1px solid var(--border, #1a2236);
+      background: transparent;
+      color: var(--text-dim, #8899bb);
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s, color 0.12s;
+    }
+
+    .ticker-chip:hover {
+      border-color: var(--accent2, #3b82f6);
+      color: var(--accent2, #3b82f6);
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- ヘッダー -->
+    <header class="header">
+      <div class="header-inner">
+        <div>
+          <div class="logo">億り人<span>爆誕装置</span></div>
+          <div class="subtitle">Backtest Engine Pro</div>
+        </div>
+        <div style="display:flex;gap:12px;align-items:center">
+          <a href="index.html" style="color:var(--text-dim,#8899bb);font-size:13px;text-decoration:none">← バックテスト</a>
+          <a href="help.html" class="header-help-btn" target="_blank">使い方</a>
+        </div>
+      </div>
+    </header>
+
+    <!-- ナビ -->
+    <nav class="builder-nav">
+      <a href="index.html">📈 バックテスト</a>
+      <a href="builder.html" class="current">🔧 戦略ビルダー</a>
+      <a href="help.html" target="_blank">❓ ヘルプ</a>
+    </nav>
+
+    <!-- メインレイアウト -->
+    <main class="builder-layout">
+
+      <!-- ===== 左カラム ===== -->
+      <div class="builder-main">
+
+        <!-- トップバー: 銘柄・期間・資金設定 -->
+        <div class="builder-top-bar">
+          <input id="ticker-input" type="text" value="7203.T" placeholder="銘柄コード" />
+          <div class="ticker-chips">
+            <button class="ticker-chip" data-ticker="^N225">日経225</button>
+            <button class="ticker-chip" data-ticker="1321.T">日経ETF</button>
+            <button class="ticker-chip" data-ticker="7203.T">トヨタ</button>
+            <button class="ticker-chip" data-ticker="6758.T">ソニー</button>
+          </div>
+          <select id="period-select">
+            <option value="6mo">6ヶ月</option>
+            <option value="1y">1年</option>
+            <option value="2y">2年</option>
+            <option value="3y" selected>3年</option>
+            <option value="5y">5年</option>
+          </select>
+          <input id="capital-input" type="number" value="1000000" placeholder="初期資金" />
+          <input id="commission-input" type="number" value="0.1" step="0.01" placeholder="手数料%" />
+          <select id="noise-select">
+            <option value="off">ノイズ OFF</option>
+            <option value="low">Low</option>
+            <option value="mid" selected>Mid</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+
+        <!-- 投資スタイル -->
+        <div class="investment-mode-row" style="margin-bottom:12px">
+          <span>投資スタイル:</span>
+          <select id="investment-mode" onchange="toggleFixedInv()">
+            <option value="compound">複利（毎回全額）</option>
+            <option value="fixed">単利（固定額）</option>
+          </select>
+          <span id="fixed-inv-box" style="display:none">
+            固定投資額 <input id="fixed-inv-amt" type="number" value="300000" style="width:110px">
+          </span>
+        </div>
+
+        <!-- エントリー条件 -->
+        <div class="section-label">🟢 エントリー条件</div>
+        <div id="entry-groups-container"></div>
+        <button onclick="addGroup()" class="add-group-btn">＋ グループを追加</button>
+
+        <!-- 決済条件 -->
+        <div class="section-label" style="margin-top:20px">🔴 決済条件</div>
+        <div class="exit-settings">
+          利確
+          <input type="number" id="take-profit" value="5" step="0.5" style="width:64px"> %で、
+          損切
+          <input type="number" id="stop-loss" value="2" step="0.5" style="width:64px"> %で、
+          タイムアウト
+          <input type="number" id="timeout-days" value="10" style="width:56px"> 日
+        </div>
+
+        <!-- 戦略名・保存・実行 -->
+        <div class="builder-action-bar">
+          <input id="strategy-name-input" type="text" placeholder="戦略名（保存用）" />
+          <button class="btn-save" onclick="saveStrategy()">💾 保存</button>
+          <button id="run-btn" class="run-btn" onclick="runBuilderBacktest()">▶ バックテスト実行</button>
+        </div>
+
+        <!-- 結果エリア -->
+        <div id="builder-results" style="margin-top:24px"></div>
+
+      </div><!-- / builder-main -->
+
+      <!-- ===== 右カラム（サイドバー）===== -->
+      <div class="builder-sidebar">
+        <div class="sidebar-panel-builder">
+          <!-- タブ -->
+          <div class="sidebar-tabs">
+            <button class="tab-btn active" data-tab="indicators" onclick="showTab('indicators')">インジケーター</button>
+            <button class="tab-btn" data-tab="saved" onclick="showTab('saved')">保存済み</button>
+          </div>
+
+          <!-- インジケーター一覧 -->
+          <div id="tab-indicators" class="tab-content">
+            <div style="font-size:11px;color:var(--text-dim,#8899bb);margin-bottom:8px">
+              グループをクリックして選択 → 追加先グループを切り替え
+            </div>
+            <div id="indicator-list"></div>
+          </div>
+
+          <!-- 保存済み戦略 -->
+          <div id="tab-saved" class="tab-content" style="display:none">
+            <div id="saved-list"></div>
+          </div>
+        </div>
+      </div><!-- / builder-sidebar -->
+
+    </main><!-- / builder-layout -->
+  </div><!-- / .app -->
+
+  <script src="engine.js"></script>
+  <script src="builder.js"></script>
+  <script>
+    // 投資モード切り替え
+    function toggleFixedInv() {
+      const mode = document.getElementById('investment-mode').value;
+      document.getElementById('fixed-inv-box').style.display = mode === 'fixed' ? 'inline-flex' : 'none';
+    }
+  </script>
+</body>
+</html>
