@@ -527,15 +527,20 @@ function runCustomBacktest(priceData, strategy, settings) {
       const unrealizedPct = (closes[i] - position.entryPrice) / position.entryPrice * 100;
       let exitReason = null;
 
+      // 1. ストップロス/利確（当日の価格で判定）
       if (settings.stopLoss > 0 && unrealizedPct <= -settings.stopLoss) {
         exitReason = `損切 -${settings.stopLoss}%`;
       } else if (settings.takeProfit > 0 && unrealizedPct >= settings.takeProfit) {
         exitReason = `利確 +${settings.takeProfit}%`;
-      } else if (strategy.exitConditions && evaluateConditionGroup(
-        strategy.exitConditions, indicators, i, closes, highs, lows, volumes
+      } 
+      // 2. テクニカル指標による決済シグナル（前日 i-1 までのデータで判断）
+      else if (strategy.exitConditions && evaluateConditionGroup(
+        strategy.exitConditions, indicators, i - 1, closes, highs, lows, volumes
       )) {
         exitReason = 'シグナル決済';
-      } else if (strategy.timeoutDays > 0 && (i - position.entryBar) >= strategy.timeoutDays) {
+      } 
+      // 3. タイムアウト
+      else if (strategy.timeoutDays > 0 && (i - position.entryBar) >= strategy.timeoutDays) {
         exitReason = `タイムアウト ${strategy.timeoutDays}日`;
       }
 
@@ -561,10 +566,11 @@ function runCustomBacktest(priceData, strategy, settings) {
     }
 
     // --- ポジションなし: エントリー判定 ---
+    // 前日 (i-1) の終値までの結果を見て、当日 (i) の始値でエントリー
     if (!position) {
       const entryOk = evaluateStrategy(
         strategy.entryGroups, strategy.groupLogic,
-        indicators, i, closes, highs, lows, volumes
+        indicators, i - 1, closes, highs, lows, volumes
       );
 
       if (entryOk) {
