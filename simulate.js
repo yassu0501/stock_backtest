@@ -130,9 +130,15 @@ export function simulate(data, sigs, noiseEngine = null, dynamicExit = null) {
         sig = 'sell'; sigs[i] = 'sell'; pos.exitReason = `利確 (+${tpPct}%)`;
       } else if (dynamicExit) {
         const dExit = dynamicExit(pos.price, i);
-        if (dExit.action !== 'HOLD') {
+        // 損切なし（slPct=0）の場合、EXIT_LOSS はスキップ（利確は通す）
+        const blockedByNoSL = slPct === 0 && dExit.action === 'EXIT_LOSS';
+        if (dExit.action !== 'HOLD' && !blockedByNoSL) {
           sig = 'sell'; sigs[i] = 'sell'; pos.exitReason = dExit.reason;
         }
+      }
+      // 損切なし（slPct=0）: 含み損での全exit をブロック（利確のみ通す）
+      if (slPct === 0 && sig === 'sell' && chg < 0 && !pos.exitReason?.includes('利確')) {
+        sig = null; sigs[i] = null; pos.exitReason = null;
       }
     }
 

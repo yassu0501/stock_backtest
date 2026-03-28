@@ -256,6 +256,21 @@ function renderSavedList() {
 }
 
 // ============================================================
+// 損切なしトグル
+// ============================================================
+function toggleBuilderNoStopLoss(checkbox) {
+  const slInput = document.getElementById('stop-loss');
+  if (checkbox.checked) {
+    slInput.dataset.savedValue = slInput.value;
+    slInput.value = 0;
+    slInput.disabled = true;
+  } else {
+    slInput.value = slInput.dataset.savedValue ?? 2;
+    slInput.disabled = false;
+  }
+}
+
+// ============================================================
 // UIとstateの同期
 // ============================================================
 function syncStateFromUI() {

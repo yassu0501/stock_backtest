@@ -18,24 +18,88 @@ const API_BASE = "";
 // ---- 取引頻度プリセット ----
 const FREQ_PRESETS = {
   normal: {
+    // RSI
     'rsi-buy': 30, 'rsi-sell': 70,
+    // Stochastic
     'st-buy': 20, 'st-sel': 80,
+    // Ichimoku
     'ichi-mode': 'tk_cross',
+    // Three soldiers
     'th-body': 0.3,
+    // RCI
     'rci-n': 9, 'rci-buy': -80, 'rci-sel': 80,
+    // MA Dev
     'md-n': 25, 'md-buy': -5, 'md-sel': 5,
+    // DMI
     'dmi-n': 14, 'dmi-adx': 25,
+    // Psycho
     'ps-n': 12, 'ps-buy': 25, 'ps-sel': 75,
+    // MA Cross
+    'short-ma': 25, 'long-ma': 75,
+    // Bollinger
+    'bb-period': 20, 'bb-sigma': 2,
+    // MACD
+    'm-fast': 12, 'm-slow': 26, 'm-sig': 9,
+    // Donchian
+    'dc-n': 20,
+    // PSAR
+    'ps-af': 0.02, 'ps-max': 0.2,
+    // Prev High
+    'ph-tp': 2,
+    // Std Break
+    'sb-n': 20, 'sb-lookb': 10, 'sb-th': 50,
+    // Hammer
+    'hm-ratio': 2, 'hm-hold': 5,
+    // Gap Fill
+    'gap-min-pct': 2.0, 'gap-fill-target': 100, 'gap-timeout': 5,
   },
   more: {
+    // RSI（緩い閾値）
     'rsi-buy': 35, 'rsi-sell': 65,
+    // Stochastic（緩い閾値）
     'st-buy': 25, 'st-sel': 75,
+    // Ichimoku（条件を緩める）
     'ichi-mode': 'tk_cross_only',
+    // Three soldiers（実体条件を緩める）
     'th-body': 0.1,
+    // RCI（緩い閾値）
     'rci-n': 9, 'rci-buy': -60, 'rci-sel': 60,
+    // MA Dev（緩い乖離率）
     'md-n': 25, 'md-buy': -3, 'md-sel': 3,
+    // DMI（低ADXフィルター）
     'dmi-n': 14, 'dmi-adx': 15,
+    // Psycho（緩い閾値）
     'ps-n': 12, 'ps-buy': 35, 'ps-sel': 65,
+    // MA Cross（短期化 → クロス増加）
+    'short-ma': 10, 'long-ma': 30,
+    // Bollinger（σ縮小 → シグナル増加）
+    'bb-period': 20, 'bb-sigma': 1.5,
+    // MACD（短期化 → クロス増加）
+    'm-fast': 6, 'm-slow': 13, 'm-sig': 4,
+    // Donchian（期間短縮 → ブレイク増加）
+    'dc-n': 10,
+    // PSAR（加速係数増加 → 反転検知増加）
+    'ps-af': 0.04, 'ps-max': 0.3,
+    // Prev High（利確幅縮小 → 早期決済・再エントリー）
+    'ph-tp': 1,
+    // Std Break（閾値緩和 → シグナル増加）
+    'sb-n': 15, 'sb-lookb': 8, 'sb-th': 30,
+    // Hammer（ヒゲ条件緩和 → 対象ローソク増加）
+    'hm-ratio': 1.5, 'hm-hold': 3,
+    // Gap Fill（最小ギャップ縮小 → エントリー増加）
+    'gap-min-pct': 1.0, 'gap-fill-target': 50, 'gap-timeout': 3,
+  }
+};
+
+window.toggleNoStopLoss = (checkbox) => {
+  const slInput = document.getElementById('sl-pct');
+  if (checkbox.checked) {
+    slInput.dataset.savedValue = slInput.value;
+    slInput.value = 0;
+    slInput.disabled = true;
+  } else {
+    slInput.value = slInput.dataset.savedValue ?? 5;
+    slInput.disabled = false;
   }
 };
 

@@ -409,6 +409,10 @@
             <input id="tp-pct" type="number" value="0" min="0" max="50" step="0.5" style="max-width: 40px; text-align: center;" />
             <span style="font-size: 0.75rem;">%利</span>
           </div>
+          <label style="display:flex;align-items:center;gap:4px;font-size:0.75rem;margin-top:4px;cursor:pointer;" title="価格ベースの損切りを無効化します。含み損によるDDは正常に発生します。">
+            <input type="checkbox" id="no-stop-loss" onchange="toggleNoStopLoss(this)" />
+            損切なし
+          </label>
         </div>
         <div class="config-item" style="min-width: 100px;">
           <label>🎲 ノイズ</label>

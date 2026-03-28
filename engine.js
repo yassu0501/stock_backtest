@@ -544,6 +544,11 @@ function runCustomBacktest(priceData, strategy, settings) {
         exitReason = `タイムアウト ${strategy.timeoutDays}日`;
       }
 
+      // 損切なし（stopLoss=0）: 含み損での決済をブロック（利確のみ通す）
+      if (settings.stopLoss === 0 && exitReason && !exitReason.includes('利確') && unrealizedPct < 0) {
+        exitReason = null;
+      }
+
       if (exitReason) {
         const commission = execPrice * position.shares * (settings.commission / 100);
         const pnl = (execPrice - position.entryPrice) * position.shares - commission - position.entryCommission;

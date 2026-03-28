@@ -741,6 +741,10 @@
           <input type="number" id="take-profit" value="5" step="0.5" style="width:64px"> %で、
           損切
           <input type="number" id="stop-loss" value="2" step="0.5" style="width:64px"> %で、
+          <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.8rem;cursor:pointer;">
+            <input type="checkbox" id="no-stop-loss-builder" onchange="toggleBuilderNoStopLoss(this)" />
+            損切なし
+          </label>
           タイムアウト
           <input type="number" id="timeout-days" value="10" style="width:56px"> 日
         </div>
