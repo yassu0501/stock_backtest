@@ -141,6 +141,7 @@
             </optgroup>
             <optgroup label="オシレーター・逆張り">
               <option value="rsi">RSI</option>
+              <option value="rsi50">RSI50（トレンドフォロー）</option>
               <option value="stoch">ストキャスティクス</option>
               <option value="rci">RCI（順位相関指数）</option>
               <option value="psycho">サイコロジカルライン</option>
@@ -164,6 +165,13 @@
             <input type="number" id="short-ma" value="25" min="3" max="100" />
             <span>/</span>
             <input type="number" id="long-ma" value="75" min="10" max="300" />
+            <span>日</span>
+          </div>
+        </div>
+        <div class="config-item param-box hidden" id="p-rsi50">
+          <label>RSI50期間</label>
+          <div class="input-row">
+            <input type="number" id="rsi50-period" value="14" min="5" max="30" />
             <span>日</span>
           </div>
         </div>

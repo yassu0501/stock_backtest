@@ -179,7 +179,8 @@ if (strategyEl) {
     engulf: 'p-engulf',
     three: 'p-three',
     ichimoku: 'p-ichimoku',
-    gap_fill: 'p-gap_fill'
+    gap_fill: 'p-gap_fill',
+    rsi50: 'p-rsi50'
   }[val];
 
   if (targetId) {

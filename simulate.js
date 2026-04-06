@@ -1,7 +1,7 @@
 // simulate.js — バックテストエンジン
 import InstitutionalAnalyzer from './institutional-analyzer.js';
 import {
-  signalMA, signalRSI, signalBB, signalMACD, signalDonchian,
+  signalMA, signalRSI, signalRSI50, signalBB, signalMACD, signalDonchian,
   signalStoch, signalPSAR, signalPrevHigh, signalRCI, signalMADev,
   signalDMI, signalPsycho, signalStdBreak,
   signalHammer, signalEngulf, signalThreeSoldiers,
@@ -404,6 +404,7 @@ export function runBacktest(data, overrideStrategy = null, noiseMode = 'off') {
     switch (strategy) {
       case 'ma_cross':  res = signalMA(data); break;
       case 'rsi':       res = signalRSI(data); break;
+      case 'rsi50':     res = signalRSI50(data); break;
       case 'bb':        res = signalBB(data); break;
       case 'macd':      res = signalMACD(data); break;
       case 'donchian':  res = signalDonchian(data); break;

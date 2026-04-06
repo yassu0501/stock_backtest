@@ -229,6 +229,17 @@ export const STRATEGY_META = {
     ],
     note: '窓開け後の「窓埋め」を狙う。ボラティリティが高い場面で有効。',
   },
+  rsi50: {
+    name: 'RSI50（トレンドフォロー）',
+    type: 'トレンドフォロー',
+    periods: [
+      { label: '数日〜1週間', level: 'ok',   mark: '△' },
+      { label: '1〜2週間',   level: 'good',  mark: '○' },
+      { label: '2週間〜1ヶ月', level: 'best', mark: '◎' },
+      { label: '1〜3ヶ月',   level: 'good',  mark: '○' },
+    ],
+    note: 'RSIが50を上抜けで買い、下抜けで売り。トレンド転換を順張りで捉える。',
+  },
 };
 
 // ---- 全戦略リスト（ランキング実行用） ----
@@ -254,6 +265,7 @@ export const ALL_STRATEGIES = [
   { id: 'volumeDecay',     name: '出来高減衰トレンド追認' },
   { id: 'ichimoku',        name: '一目均衡表' },
   { id: 'gap_fill',        name: 'ギャップ埋め（窓埋め）' },
+  { id: 'rsi50',           name: 'RSI50（トレンドフォロー）' },
 ];
 
 // ---- 戦略: 移動平均クロス ----
@@ -296,6 +308,22 @@ export function signalRSI(data) {
     return null;
   });
   return { sigs, lines: [{ label: "RSI", data: rsiArr, color: "#facc15" }] };
+}
+
+// ---- 戦略: RSI50（トレンドフォロー） ----
+export function signalRSI50(data) {
+  const period = parseInt(getVal('rsi50-period', '14'));
+
+  const closes = data.map((d) => d.close);
+  const rsiArr = calcRSI(closes, period);
+  let inPosition = false;
+  const sigs = rsiArr.map((r, i) => {
+    if (r === null || i === 0 || rsiArr[i - 1] === null) return null;
+    if (!inPosition && rsiArr[i - 1] < 50 && r >= 50) { inPosition = true;  return 'buy'; }
+    if (inPosition  && rsiArr[i - 1] > 50 && r <= 50) { inPosition = false; return 'sell'; }
+    return null;
+  });
+  return { sigs, lines: [{ label: 'RSI', data: rsiArr, color: '#facc15' }] };
 }
 
 // ---- 戦略: ボリンジャーバンド ----
